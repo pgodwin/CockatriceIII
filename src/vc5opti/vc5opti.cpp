@@ -1,0 +1,1420 @@
+// <FILE:vc5opti.cpp>
+// <MEMO:REF.WIN.UT.BASILISKII.UAE.20000428.123.LP.RESTNONE>
+// <TABS:2>
+
+/*
+	Optimizer for UAE core (cpuemu.asm)
+	Lauri Pesonen
+	July, 1999
+
+	Assumes:
+		- MSVC5 or MSVC6. Other versions will probably need changes to the configuration.
+		- UAE must be streamlined (newcpu.cpp, cpuemu.cpp)
+		- fastcall calling convention (opcode in ecx), see FASTCALL_REGISTER
+		- regs.pc_p is loaded in eax (optimize_pc_usage_atstart)
+		- return value, if there is any, uses eax
+
+	Misc:
+		- Use masm command "ml /c /coff" to assemble the resulting file,
+		  then relink the executable
+		- There is a strong synergy between different types of optimizations.
+		- "Streamlined" in this context means that there is no fetch/execute
+		  loop, but at the end of the instruction there is a jump to the next one.
+			Specflag checks may or may not be present. Here they have been
+			replaced by fake function table. If you can't use that you need
+			to insert specflags check into insert_tail().
+
+	Caveats:
+		"~vc5opti.asm" in current directory is destroyed (temp file)
+
+	TODO:
+		- a switch to generate comments
+		- switches to select what to optimize (see configuration)
+		- possibility to reorder for better pairing. The compiler does
+		  usually fine, but things change after we delete lines
+			(and occasionally insert some)
+
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include "..\sysdeps.h"
+
+
+//////////// Configuration start ////////////
+
+const int optimize_pc_usage_atstart = 1;
+const int optimize_pc_usage_atend   = 1;
+const int optimize_register_usage   = 1;
+const int optimize_retval_usage     = 1;
+const int optimize_stack_frames			= 1;
+const int separate_exit_points			= 1;
+const int optimize_bswap_hack				= 1;
+
+#define C_STYLE_DECORATIONS 1
+
+// Increase if masm complains "short jump too far"
+#define MAX_TOLERATED_SHORT_DISTANCE 30
+
+// Maximums of one function (may contain a lot of comments in between)
+#define MAX_LINES 100000
+#define MAX_LINE_LEN 256
+#define MAX_RETURNS 100
+
+#define TEMP_FILE_NAME "~vc5opti.asm"
+
+// Register names (case sensitive)
+enum {
+	REGISTER_FIRST=0,
+	ESI=0, EDI, EAX, EBX, ECX, EDX, EBP,
+	REGISTER_COUNT,
+	REGISTER_NONE
+};
+char *reg_names[] = { "esi", "edi", "eax", "ebx", "ecx", "edx", "ebp" };
+char *reg_names_short[] = { "si", "di", "ax", "bx", "cx", "dx", "<none>" };
+
+// Opcode is passed in this parameter.
+#define FASTCALL_REGISTER		ECX
+
+// Return value uses this register.
+#define RETVAL_REGISTER			EAX
+
+#define PUSH_COMMAND				"\tpush\t%s"
+#define POP_COMMAND					"\tpop\t%s"
+#define RETVAL_COMMAND			"\tmov\teax,"
+#define RET_COMMAND					"\tret\t"
+#define RET_COMMAND_LINE		"\tret\t0\n"
+#define MOV_REG_EAX					"\tmov\t%s, eax\n"
+#define FUNC_START_COMMAND	" PROC "
+#if C_STYLE_DECORATIONS
+#define FUNC_END_COMMAND		" ENDP"
+#else
+#define FUNC_END_COMMAND		" ENDP\t"
+#endif
+#define SUB_ESP_COMMAND			"\tsub\tesp, "
+#define ADD_ESP_COMMAND			"\tadd\tesp, "
+#define MOV_EBP_ESP_COMMAND	"\tmov\tebp, esp"
+
+#define CALL_COMMAND				"\tcall\t"
+#define JMP_COMMAND					"\tjmp\t"
+#define MAYBE_BRANCH_COMMAND	"\tj"
+#define LABEL								"$L"
+#define UNNECESSARY_LABEL_1	"$didnt_jump$"
+#define UNNECESSARY_LABEL_2	"$endlabel"
+
+
+#define BSWAP_COMMAND_02		"\tbswap\tebp"
+#define BSWAP_COMMAND_04		"\tbswap\teax"
+#define BSWAP_COMMAND_06		"\tbswap\tebx"
+#define BSWAP_COMMAND_XX		"\tbswap\t%s\n"
+#define XCHG_COMMAND_XX			"\txchg\t%s, %s\n"
+
+#define GET_LONG						"\tmov\t%s, DWORD PTR [%s"
+#define PUT_LONG						"\tmov\tDWORD PTR ["
+#define GET_IWORD						"\tmov\t%s, WORD PTR [%s"
+
+#define TAIL_RECURSION_01		"\tjmp\t?op_illg"
+#define TAIL_RECURSION_02		"\tjmp\tDWORD PTR ?"
+
+#define MODE_386		"\t.386P"
+#define MODE_486		"\t.486P"
+
+
+// Label is generated at the end of the function (if needed).
+// If using separate exit points (preferable), no labels are needed.
+#define OUR_LABEL						"$BA%04d"
+
+// Change these if masm complains about undefined symbols
+#if C_STYLE_DECORATIONS
+
+#define CPUFUNCTBL_DECORATED	"_cpufunctbl"
+#define REGS_PC_P_DECORATED		"_regs+92"
+
+#else //!C_STYLE_DECORATIONS
+
+#if HAVE_VOID_CPU_FUNCS
+#define CPUFUNCTBL_DECORATED	"?cpufunctbl@@3PAP6IXK@ZA"
+#else
+#define CPUFUNCTBL_DECORATED	"?cpufunctbl@@3PAP6IKK@ZA"
+#endif
+#define REGS_PC_P_DECORATED		"?regs@@3Uregstruct@@A+92"
+
+#endif //C_STYLE_DECORATIONS
+
+// First param is REGS_PC_P_DECORATED
+#define STORE_PC_P_COMMAND	"\tmov\tDWORD PTR %s, %s"
+#define LOAD_PC_P_COMMAND		"\tmov\t%s, DWORD PTR %s"
+
+// See also insert_tail(). Too much asm there to be completely parametrized
+
+//////////// Configuration end ////////////
+
+
+
+
+// Statistics
+int function_count;
+int regs_deleted[REGISTER_COUNT];
+int ret_deleted;
+int retvals_deleted;
+int bswaps_patched;
+int xchg_patched;
+int pc_p_reloads_deleted;
+int pc_p_reloads_deleted2;
+int stack_frames_deleted;
+
+// Total lines handled so far
+int source_line_count;
+
+// Labels generated by us
+int label_count;
+
+// Lines of the current function in memory
+int line_count;
+char *lines[MAX_LINES];
+
+// Output file name
+char destname[_MAX_PATH];
+
+// Min size strlen(STORE_PC_P_COMMAND)+strlen(REGS_PC_P_DECORATED)
+char store_pc_p_str[256];
+
+// Min size strlen(LOAD_PC_P_COMMAND)+strlen(REGS_PC_P_DECORATED)
+char load_pc_p_str[256];
+
+
+
+////////////////// Report functions //////////////////
+void statistics( void )
+{
+	int i;
+
+	printf( "Total of %d functions.\n", function_count );
+	printf( "push/pop pairs deleted:\n" );
+	for(i=0; i<REGISTER_COUNT; i++) {
+		printf( "  %s: %d\n", reg_names[i], regs_deleted[i] );
+	}
+	printf( "return statements deleted: %d\n", ret_deleted );
+	printf( "return value assignments deleted: %d\n", retvals_deleted );
+	printf( "regs.pc_p reloads at start deleted: %d\n", pc_p_reloads_deleted2 );
+	printf( "regs.pc_p reloads at end deleted: %d\n", pc_p_reloads_deleted );
+
+	// Some (quite many) stack frames are counted as ecx push/pop deletions.
+	printf( "stack frames deleted: %d\n", stack_frames_deleted );
+	printf( "  (many stack frames usually get counted as ecx deletions)\n" );
+	printf( "bswap patches: %d\n", bswaps_patched );
+	printf( "xchg patches: %d\n", xchg_patched );
+}
+
+void progress( int p )
+{
+	static int bs = 0;
+	char line[20];
+
+	for( int i=0; i<bs; i++ ) printf( "\b" );
+	if(p >= 0) {
+		sprintf( line, "%d", p );
+		printf( line );
+		putchar('%');
+		bs = strlen(line)+1;
+	} else {
+		bs = 0;
+	}
+}
+
+////////////////// Line housekeeping functions //////////////////
+void init_lines( void )
+{
+	line_count = 0;
+	for( int i=0; i<MAX_LINES; i++ ) {
+		lines[i] = 0;
+	}
+}
+
+void free_lines( void )
+{
+	for( int i=0; i<MAX_LINES; i++ ) {
+		if(lines[i]) {
+			free(lines[i]);
+			lines[i] = 0;
+		}
+	}
+	line_count = 0;
+}
+
+void inline my_assert( int expr, char *msg )
+{
+	if(!expr) {
+		progress(-1);
+		unlink(destname);
+		printf( "\nAssert failed: %s (about line %d)", msg, source_line_count );
+		exit(1);
+	}
+}
+
+void alloc_line( int i )
+{
+	if(!lines[i]) {
+		lines[i] = (char *)malloc(MAX_LINE_LEN);
+		my_assert( lines[i] != 0, "out of memory\n" );
+	}
+}
+
+void replace_line( int i, char *line )
+{
+	my_assert( strlen(line) < MAX_LINE_LEN, "too long line\n" );
+	alloc_line( i );
+	strcpy( lines[i], line );
+}
+
+void insert_line( char *line )
+{
+	my_assert( line_count < MAX_LINES, "function is too large\n" );
+	alloc_line(line_count);
+	replace_line(line_count,line);
+	line_count++;
+}
+
+void swap_lines( int a, int b )
+{
+	my_assert( (a>=0 && b>=0 && a<MAX_LINES && b<MAX_LINES), "swap_lines(): range check\n" );
+
+	char *s = lines[a];
+	lines[a] = lines[b];
+	lines[b] = s;
+}
+
+void make_room( int where, int how_much )
+{
+	int i;
+	#define MAX_MOVE_LINES 200
+	char *save_lines[MAX_MOVE_LINES];
+
+	my_assert( how_much < MAX_MOVE_LINES, "moving too many lines\n" );
+	my_assert( line_count+how_much < MAX_LINES, "function is too large\n" );
+
+	for( i=0; i<how_much; i++ ) {
+		save_lines[i] = lines[line_count+i];
+	}
+
+	for( i=line_count-1; i>=where; i-- ) {
+		lines[i+how_much] = lines[i];
+	}
+
+	for( i=0; i<how_much; i++ ) {
+		lines[where+i] = save_lines[i];
+	}
+
+	line_count += how_much;
+}
+
+void delete_line( int del )
+{
+	my_assert( del >= 0 && del<line_count, "deleting non-existing line\n" );
+
+	char *save = lines[del];
+	for( int i=del; i<line_count-1; i++ ) {
+		lines[i] = lines[i+1];
+	}
+	lines[line_count-1] = save;
+	line_count--;
+}
+
+void write_line( FILE *f, char *line )
+{
+	my_assert( EOF != fputs( line, f ), "disk full\n" );
+}
+
+void write_lines( FILE *f )
+{
+	for( int i=0; i<line_count; i++ ) {
+		write_line( f, lines[i] );
+	}
+	line_count = 0;
+}
+
+
+////////////////// a? names //////////////////
+static char *loname( int r )
+{
+	switch(r) {
+		case EAX: return "al";
+		case EBX: return "bl";
+		case ECX: return "cl";
+		case EDX: return "dl";
+		default: my_assert( 0, "Register usage error" );
+	}
+	return 0; // just to shut up warnings
+}
+
+static char *hiname( int r )
+{
+	switch(r) {
+		case EAX: return "ah";
+		case EBX: return "bh";
+		case ECX: return "ch";
+		case EDX: return "dh";
+		default: my_assert( 0, "Register usage error" );
+	}
+	return 0; // just to shut up warnings
+}
+
+
+////////////////// Optimizer functions //////////////////
+#ifdef SWAPPED_ADDRESS_SPACE
+void insert_tail( int where, int pc_reg )
+{
+	char buf[256];
+	int n_lines = 0;
+
+	#define L(x) replace_line(where++,x)
+
+#ifdef SPECFLAG_EXCEPIONS
+	n_lines--;
+#endif
+
+	if(pc_reg != REGISTER_NONE) {
+		pc_p_reloads_deleted++;
+
+		n_lines += 5;
+
+		// I want to keep pc_p always in EAX. Then it's possible to
+		// optimize function starts.
+		if(pc_reg != EAX) n_lines++;
+
+		make_room( where, n_lines );
+		L("\n");
+		switch( pc_reg ) {
+			case EAX:
+				sprintf( buf, "\tmovzx \tecx, word ptr [%s-1]\n", reg_names[EAX] ); L(buf);
+				break;
+			case ECX:
+				sprintf( buf, "\tmov\teax,%s\n", reg_names[ECX] ); L(buf);
+				sprintf( buf, "\tmovzx\tecx, word ptr [%s-1]\n", reg_names[EAX] ); L(buf);
+				break;
+			default:
+				sprintf( buf, "\tmov\teax,%s\n", reg_names[pc_reg] ); L(buf);
+				sprintf( buf, "\tmovzx\tecx, word ptr [%s-1]\n", reg_names[pc_reg] ); L(buf);
+		}
+	} else {
+		n_lines += 6;
+		make_room( where, n_lines );
+		L("\n");
+		sprintf( buf, "\tmov\teax, DWORD PTR %s\n", REGS_PC_P_DECORATED ); L(buf);
+		L("\tmovzx\tecx, word ptr [eax-1]\n");
+	}
+
+#ifdef SPECFLAG_EXCEPIONS
+	sprintf( buf, "\tjmp\t[ecx*4+OFFSET FLAT:%s+4096]\n", CPUFUNCTBL_DECORATED ); L(buf);
+#else
+	sprintf( buf, "\tmov\tedx,[%s]\n", CPUFUNCTBL_DECORATED ); L(buf);
+	L("\tjmp\t[ecx*4+edx]\n");
+#endif
+
+	L("\n");
+}
+#else // SWAPPED_ADDRESS_SPACE
+void insert_tail( int where, int pc_reg )
+{
+	char buf[256];
+	int n_lines = 0;
+
+	#define L(x) replace_line(where++,x)
+
+#ifdef SPECFLAG_EXCEPIONS
+	n_lines--;
+#endif
+
+	if(pc_reg != REGISTER_NONE) {
+		pc_p_reloads_deleted++;
+
+#ifdef HAVE_GET_WORD_UNSWAPPED
+		n_lines += 5;
+#else
+		n_lines += 6;
+#endif
+
+		// I want to keep pc_p always in EAX. Then it's possible to
+		// optimize function starts.
+		if(pc_reg != EAX) n_lines++;
+
+		make_room( where, n_lines );
+		L("\n");
+		switch( pc_reg ) {
+			case EAX:
+				sprintf( buf, "\tmovzx\tecx, word ptr[%s]\n", reg_names[EAX] ); L(buf);
+				break;
+			case ECX:
+				sprintf( buf, "\tmov\teax,%s\n", reg_names[ECX] ); L(buf);
+				sprintf( buf, "\tmovzx\tecx, word ptr[%s]\n", reg_names[EAX] ); L(buf);
+				break;
+			default:
+				sprintf( buf, "\tmov\teax,%s\n", reg_names[pc_reg] ); L(buf);
+				sprintf( buf, "\tmovzx\tecx, word ptr[%s]\n", reg_names[pc_reg] ); L(buf);
+		}
+	} else {
+#ifdef HAVE_GET_WORD_UNSWAPPED
+		n_lines += 6;
+#else
+		n_lines += 7;
+#endif
+		make_room( where, n_lines );
+		L("\n");
+		sprintf( buf, "\tmov\teax, DWORD PTR %s\n", REGS_PC_P_DECORATED ); L(buf);
+		L("\tmovzx\tecx, word ptr[eax]\n");
+	}
+
+#ifdef SPECFLAG_EXCEPIONS
+#ifndef HAVE_GET_WORD_UNSWAPPED
+	L("\txchg\tcl, ch\n");
+#endif
+	sprintf( buf, "\tjmp\t[ecx*4+OFFSET FLAT:%s+4096]\n", CPUFUNCTBL_DECORATED ); L(buf);
+#else //!SPECFLAG_EXCEPIONS
+	sprintf( buf, "\tmov\tedx,[%s]\n", CPUFUNCTBL_DECORATED ); L(buf);
+#ifndef HAVE_GET_WORD_UNSWAPPED
+	L("\txchg\tcl, ch\n");
+#endif
+	L("\tjmp\t[ecx*4+edx]\n");
+#endif //SPECFLAG_EXCEPIONS
+	L("\n");
+}
+#endif // SWAPPED_ADDRESS_SPACE
+
+int rused( char *line, char *reg, char *comment )
+{
+	int ok = 0, rlen = strlen(reg);
+	char *p;
+	char before, after;
+
+	p = line;
+	while( (p = strstr(p,reg)) != 0 ) {
+		before = (p == line) ? '\0' : p[-1];
+		after = p[rlen];
+		if(!isalnum(before) && !isalnum(after)) {
+			if(!comment || comment > p) {
+				return(1);
+			}
+		}
+		p++;
+	}
+	return(0);
+}
+
+int symused( char *line, char *sym )
+{
+	return(rused( line, sym, strchr(line,';')));
+}
+
+// Check partial registers (ax,al,ah etc) too
+int reg_used_on_line( char *line, char *reg )
+{
+	int rlen = strlen(reg);
+	char *comment;
+	char reg2[10];
+
+	my_assert( strlen(reg) == 3, "reg_used_on_line() needs 3 letter base register names" );
+
+	comment = strchr( line, ';' );
+
+	// eax
+	if(rused(line,reg,comment)) return(1);
+
+	// esi, edi, ebp: no partial registers
+	if(reg[2] != 'x') return(0);
+
+	// ax
+	strcpy( reg2, reg+1 );
+	if(rused(line,reg2,comment)) return(1);
+
+	// al
+	reg2[1] = 'l';
+	if(rused(line,reg2,comment)) return(1);
+
+	// ah
+	reg2[1] = 'h';
+	if(rused(line,reg2,comment)) return(1);
+
+	// Note that this does not need to be perfect.
+	// i.e. when scanning forwards, if there is a rep movsd in the code,
+	// we know that esi,edi,and ecx must have been touched before
+	// anyway, and we have already detected that
+
+	// Put some more here if you need to, I got tired.
+	// If you have a very slow machine and compile often,
+	// you may want to optimize this.
+
+	if(strcmp(reg,"eax") == 0) {
+		if(rused(line,"cdq",comment)) return(1);
+		if(rused(line,"cbw",comment)) return(1);
+		if(rused(line,"cwd",comment)) return(1);
+		if(rused(line,"cwde",comment)) return(1);
+		if(rused(line,"daa",comment)) return(1);
+		if(rused(line,"das",comment)) return(1);
+		if(rused(line,"div",comment)) return(1);
+		if(rused(line,"mul",comment)) return(1);
+		if(rused(line,"idiv",comment)) return(1);
+		if(rused(line,"imul",comment)) return(1);
+		if(rused(line,"lahf",comment)) return(1);
+	} else if(strcmp(reg,"edx") == 0) {
+		if(rused(line,"cwd",comment)) return(1);
+		if(rused(line,"cdq",comment)) return(1);
+		if(rused(line,"div",comment)) return(1);
+		if(rused(line,"mul",comment)) return(1);
+		if(rused(line,"idiv",comment)) return(1);
+		if(rused(line,"imul",comment)) return(1);
+	} else if(strcmp(reg,"ecx") == 0) {
+		if(rused(line,"loop",comment)) return(1);
+		if(rused(line,"loope",comment)) return(1);
+		if(rused(line,"loopz",comment)) return(1);
+		if(rused(line,"loopne",comment)) return(1);
+		if(rused(line,"loopnz",comment)) return(1);
+		if(rused(line,"movs",comment)) return(1);
+		if(rused(line,"movsb",comment)) return(1);
+		if(rused(line,"movsd",comment)) return(1);
+		if(rused(line,"movsw",comment)) return(1);
+		if(rused(line,"outs",comment)) return(1);
+	} else if(strcmp(reg,"esi") == 0) {
+		if(rused(line,"movs",comment)) return(1);
+		if(rused(line,"movsb",comment)) return(1);
+		if(rused(line,"movsd",comment)) return(1);
+		if(rused(line,"movsw",comment)) return(1);
+		if(rused(line,"outs",comment)) return(1);
+	} else if(strcmp(reg,"edi") == 0) {
+		if(rused(line,"movs",comment)) return(1);
+		if(rused(line,"movsb",comment)) return(1);
+		if(rused(line,"movsd",comment)) return(1);
+		if(rused(line,"movsw",comment)) return(1);
+	}
+
+	return(0);
+}
+
+int any_branch( char *line )
+{
+	if(strncmp(line,RET_COMMAND,strlen(RET_COMMAND)) == 0) return(1);
+	if(strncmp(line,CALL_COMMAND,strlen(CALL_COMMAND)) == 0) return(1);
+	if(strncmp(line,JMP_COMMAND,strlen(JMP_COMMAND)) == 0) return(1);
+	if(strncmp(line,MAYBE_BRANCH_COMMAND,strlen(MAYBE_BRANCH_COMMAND)) == 0) return(1);
+	if(strncmp(line,LABEL,strlen(LABEL)) == 0) return(1);
+	return(0);
+}
+
+// Pass null in ret_lines to get the count only.
+int get_ret_lines( int *ret_lines, int maximum )
+{
+	char *line;
+	int ret_count = 0;
+
+	for( int i=1; i<line_count; i++) {
+		line = lines[i];
+		if(strncmp(line,RET_COMMAND,strlen(RET_COMMAND)) == 0) {
+			if(ret_lines) {
+				my_assert( ret_count < maximum, "too many return statements\n" );
+				ret_lines[ret_count] = i;
+			}
+			ret_count++;
+		}
+	}
+	return(ret_count);
+}
+
+/*
+		Note that "push/pop ecx" is commonly used as a quick version
+		of adjusting stack pointer when using fastcall calling convention.
+		It can be taken away (sometimes), since we have reserved "enough"
+		stack space before entering streamlined code.
+*/
+
+int remove_stack_frames_esp(void)
+{
+	int i;
+	char *line;
+	char subesp_str[20], addesp_str[20];
+	int subesp_line = -1;
+	int ret_count = 0, ret_lines[MAX_RETURNS];
+
+	#define MAX_POPS 100
+	int addesp_count = 0, addesp_lines[MAX_POPS];
+
+	// Determine how it flows
+	ret_count = get_ret_lines( ret_lines, MAX_RETURNS );
+	my_assert( ret_count > 0, "no ret found (already optimized?)" );
+
+	strcpy( subesp_str, SUB_ESP_COMMAND );
+	strcpy( addesp_str, ADD_ESP_COMMAND );
+
+	// Was the reg pushed before used?
+	// Careful with fastcall register, it's a special case
+	for(i=1; i<ret_lines[0]; i++) {
+		line = lines[i];
+		if(any_branch(line)) return(0);
+		if(*line != ';') {
+			if(strstr(line,subesp_str)) {
+				subesp_line = i;
+				break;
+			} else if(reg_used_on_line(line,"esp")) {
+				// Stop at first esp usage.
+				return(0);
+			}
+		}
+	}
+
+	if(subesp_line < 0) return(0);
+
+	for( int r=ret_count-1; r>=0; r-- ) {
+		int first_r;
+		first_r = r == 0 ? 1 : ret_lines[r-1];
+		for(i=ret_lines[r]-1; i>=first_r; i--) {
+			line = lines[i];
+			if(*line != ';') {
+				if(strstr(line,addesp_str)) {
+					my_assert( addesp_count < MAX_POPS, "too many add esp statements\n" );
+					addesp_lines[addesp_count++] = i;
+					break;
+				} else if(reg_used_on_line(line,"esp")) {
+					// Cannot delete any of these sub esp/add esp pairs.
+					// Usually all of them can be deleted.
+					return(0);
+				}
+			}
+		}
+	}
+
+	// These are already in reverse order.
+	for( i=0; i<addesp_count; i++) {
+		delete_line(addesp_lines[i]);
+	}
+	delete_line(subesp_line);
+
+	return(1);
+}
+
+int remove_stack_frames_ebp(void)
+{
+	char *line;
+	int ret = 0;
+	int move_line = -1;
+
+	for( int i=1; i<line_count; i++) {
+		line = lines[i];
+		if(strncmp(line,MOV_EBP_ESP_COMMAND,strlen(MOV_EBP_ESP_COMMAND)) == 0) {
+			move_line = i;
+		} else if(reg_used_on_line(line,"ebp")) {
+			move_line = -1;
+			break;
+		}
+	}
+
+	if(move_line >= 0) {
+		delete_line(move_line);
+		ret = 1;
+	}
+
+	return(ret);
+}
+
+void remove_unnecessary_labels(void)
+{
+	char *line;
+
+	for( int i=line_count-1; i>=1; i--) {
+		line = lines[i];
+		if( strncmp(line,UNNECESSARY_LABEL_1,strlen(UNNECESSARY_LABEL_1)) == 0 ||
+				strncmp(line,UNNECESSARY_LABEL_2,strlen(UNNECESSARY_LABEL_2)) == 0 )
+		{
+			delete_line(i);
+		}
+	}
+}
+
+int check_register_usage( char *reg )
+{
+	int i;
+	char *line;
+	char pushstr[20], popstr[20];
+	int push_line = -1;
+	int ret_count = 0, ret_lines[MAX_RETURNS];
+
+	#define MAX_POPS 100
+	int pop_count = 0, pop_lines[MAX_POPS];
+
+	// Determine how it flows
+	ret_count = get_ret_lines( ret_lines, MAX_RETURNS );
+	my_assert( ret_count > 0, "no ret found (already optimized?)" );
+
+	sprintf( pushstr, PUSH_COMMAND, reg );
+	sprintf( popstr, POP_COMMAND, reg );
+
+	// Was the reg pushed before used?
+	// Careful with fastcall register, it's a special case
+	for(i=1; i<ret_lines[0]; i++) {
+		line = lines[i];
+		if(any_branch(line)) return(0);
+		if(*line != ';') {
+			if(strstr(line,pushstr)) {
+				push_line = i;
+				break;
+			} else if(reg_used_on_line(line,reg)) {
+				// Used before pushed.
+				return(0);
+			} else if(reg_used_on_line(line,"esp")) {
+				// Stop at first esp reference. We had most of them,
+				// going further needs extensive flow control analysis
+				return(0);
+			}
+		}
+	}
+
+	if(push_line < 0) return(0);
+
+	for( int r=ret_count-1; r>=0; r-- ) {
+		int first_r;
+		first_r = r == 0 ? 1 : ret_lines[r-1];
+		for(i=ret_lines[r]-1; i>=first_r; i--) {
+			line = lines[i];
+			if(*line != ';') {
+				if(strstr(line,popstr)) {
+					my_assert( pop_count < MAX_POPS, "too many pop statements\n" );
+					pop_lines[pop_count++] = i;
+					break;
+				} else if(reg_used_on_line(line,"esp")) {
+					// Cannot delete any of these push/pop pairs.
+					// The compiler has optimized pop commands and esp
+					// references in a way that we cannot handle,
+					// would require command reorderings.
+					// We can just return since nothing has actually been deleted yet.
+					return(0);
+				} else if(reg_used_on_line(line,reg)) {
+					// used after pop (if there is any)
+					if(r == ret_count-1 && strcmp(reg,reg_names[FASTCALL_REGISTER]) == 0) {
+						return(0);
+					} else {
+						// Can't find the pop in this ret sequence ...?
+						// Again, we can just return since nothing has been deleted.
+						progress(-1);
+						printf( "\nwarning: unmatched pop %s at line %d\n", reg, source_line_count );
+						return(0);
+					}
+				}
+			}
+		}
+	}
+
+	// These are already in reverse order.
+	for( i=0; i<pop_count; i++) {
+		delete_line(pop_lines[i]);
+	}
+	delete_line(push_line);
+
+	return(1);
+}
+
+int check_retval_usage( void )
+{
+	int i;
+	char *line;
+	char eaxstr[20];
+	int deleted_count = 0;
+
+	int ret_count = 0, ret_lines[MAX_RETURNS];
+
+	// Determine flow structure
+	ret_count = get_ret_lines( ret_lines, MAX_RETURNS );
+	my_assert( ret_count > 0, "no ret found (already optimized?)" );
+
+	strcpy( eaxstr, RETVAL_COMMAND );
+
+	for( int r=ret_count-1; r>=0; r-- ) {
+		int first_r;
+		first_r = r == 0 ? 1 : ret_lines[r-1]+1;
+		for(i=ret_lines[r]-1; i>=first_r; i--) {
+			line = lines[i];
+			if(any_branch(line)) break;
+			if(*line != ';') {
+				if(strstr(line,eaxstr)) {
+					delete_line(i);
+					deleted_count++;
+					break;
+				} else if(reg_used_on_line(line,reg_names[RETVAL_REGISTER])) {
+					// Cannot delete here, but continue checking.
+					break;
+				}
+			}
+		}
+	}
+
+	return(deleted_count);
+}
+
+int is_empty_or_comment( char *line )
+{
+	return (*line != '\t') && (*line == ';' || *line < ' ');
+}
+
+// Do some simple pairing checks.
+int find_best_line_after_load( int load_line, int reg )
+{
+	int best_found = load_line+1;
+
+	// This doesn't speed up anything on a PIII, it's not that easy.
+	/*
+	// Find first actual code line after register load.
+	int i = load_line+1;
+	while(i < line_count && is_empty_or_comment(lines[i])) i++;
+
+	if(i < line_count) {
+		if(!any_branch(lines[i]) && !reg_used_on_line(lines[i],reg_names[reg])) {
+			best_found = i+1;
+		}
+	}
+	*/
+
+	return best_found;
+}
+
+int patch_bswap( int *xchg_count )
+{
+	int i, j, r1, r2;
+	char *bs_line, *assig_line;
+	char fetch_str[50], rname[50];
+	int count = 0;
+	int best_line;
+
+	for(i=line_count-1; i>=0; i--) {
+		bs_line = lines[i];
+		if(strncmp(bs_line,BSWAP_COMMAND_04,strlen(BSWAP_COMMAND_04)) == 0) {
+			for(j=i-1; j>=0; j--) {
+				assig_line = lines[j];
+				for( r1=REGISTER_FIRST; r1<REGISTER_COUNT; r1++ ) {
+					for( r2=REGISTER_FIRST; r2<REGISTER_COUNT; r2++ ) {
+						sprintf( fetch_str, GET_LONG, reg_names[r1], reg_names[r2] );
+						if(strncmp(fetch_str,assig_line,strlen(fetch_str)) == 0) {
+							sprintf( fetch_str, BSWAP_COMMAND_XX, reg_names[r1] );
+							delete_line(i);
+							best_line = find_best_line_after_load( j, r1 );
+							make_room( best_line, 1 );
+							replace_line( best_line, fetch_str );
+							count++;
+							i = j;
+							goto next_swap;
+						}
+					}
+				}
+			}
+			if(strstr(bs_line,"dummy")) {
+				my_assert( 0, "bswap (get_long) not handled" );
+			} else {
+				// remove "dummy = get_ilong(...)"
+				delete_line(i);
+			}
+		} else if(strncmp(bs_line,BSWAP_COMMAND_02,strlen(BSWAP_COMMAND_02)) == 0) {
+			for(j=i+1; j<line_count; j++) {
+				assig_line = lines[j];
+				strcpy( fetch_str, PUT_LONG );
+				if(strncmp(fetch_str,assig_line,strlen(fetch_str)) == 0) {
+					int len = strlen(assig_line);
+					memcpy( rname, &assig_line[len-4], 3 );
+					rname[3] = 0;
+					for( r1=REGISTER_FIRST; r1<REGISTER_COUNT; r1++ ) {
+						if(strcmp(rname,reg_names[r1]) == 0) {
+							sprintf( fetch_str, BSWAP_COMMAND_XX, reg_names[r1] );
+							make_room( j, 1 );
+							replace_line( j, fetch_str );
+							count++;
+							delete_line(i);
+							goto next_swap;
+						}
+					}
+					delete_line(i);
+					printf( "\nConstant bswap (about line %d)\n", source_line_count );
+					goto next_swap;
+				}
+			}
+			my_assert( 0, "bswap (put_long) not handled" );
+		} else if(strncmp(bs_line,BSWAP_COMMAND_06,strlen(BSWAP_COMMAND_04)) == 0) {
+			for(j=i-1; j>=0; j--) {
+				assig_line = lines[j];
+				for( r1=REGISTER_FIRST; r1<REGISTER_COUNT; r1++ ) {
+					for( r2=REGISTER_FIRST; r2<REGISTER_COUNT; r2++ ) {
+						sprintf( fetch_str, GET_IWORD, reg_names_short[r1], reg_names[r2] );
+						if(strncmp(fetch_str,assig_line,strlen(fetch_str)) == 0) {
+							if(r1 == ESI || r1 == EDI) {
+								// Just a temporary hack to see whether this works or not.
+								// Terrible pairing, makes things actually worse.
+								delete_line(i);
+								make_room( j+1, 3 );
+
+								sprintf( fetch_str, XCHG_COMMAND_XX, reg_names_short[r1], "ax" );
+								replace_line( j+1, fetch_str );
+
+								sprintf( fetch_str, XCHG_COMMAND_XX, "al", "ah" );
+								replace_line( j+2, fetch_str );
+
+								sprintf( fetch_str, XCHG_COMMAND_XX, reg_names_short[r1], "ax" );
+								replace_line( j+3, fetch_str );
+							} else {
+								delete_line(i);
+								make_room( j+1, 1 );
+								sprintf( fetch_str, XCHG_COMMAND_XX, loname(r1), hiname(r1) );
+								replace_line( j+1, fetch_str );
+							}
+							count++;
+							i = j;
+							(*xchg_count)++;
+							goto next_swap;
+						}
+					}
+				}
+			}
+			// my_assert( 0, "xchg (get_iword) not handled" );
+			printf( "\nWarning: xchg (get_iword) not handled at (about) line %d, maybe cctrue(const)\n", source_line_count );
+			progress(-1);
+			delete_line(i);
+		}
+
+next_swap: ;
+	}
+
+	return(count);
+}
+
+int get_pc_register_backwards( int last_line )
+{
+	char reg[256], *line;
+	int i, r;
+
+	int pc_reg = REGISTER_NONE;
+
+	for( i=last_line; i>=1; i-- ) {
+		line = lines[i];
+		if(*line == 0 || *line == '\r' || *line == '\n' || *line == ';') continue;
+		if( sscanf( line, store_pc_p_str, reg ) == 1 ) {
+			for( r=REGISTER_FIRST; r<REGISTER_COUNT; r++ ) {
+				if(strcmp(reg_names[r],reg) == 0) {
+					pc_reg = r;
+					break;
+				}
+			}
+		}
+		// Could look further on failure
+		break;
+	}
+
+	return(pc_reg);
+}
+
+int get_pc_register_forwards( int first_line, int *where )
+{
+	char reg[256], test[256], *line;
+	int i, r;
+	int regs_used[REGISTER_COUNT], eax_count = 0;
+
+	memset( regs_used, 0, sizeof(regs_used) );
+
+	for( i=first_line; i<line_count; i++ ) {
+		line = lines[i];
+		if(*line == 0 || *line == '\r' || *line == '\n' || *line == ';') continue;
+		if(any_branch(line)) return(REGISTER_NONE);
+
+		for( r=REGISTER_FIRST; r<REGISTER_COUNT; r++ ) {
+			sprintf( test, load_pc_p_str, reg_names[r] );
+			// Cannot use sscanf yet
+			if(strncmp( line, test, strlen(test) ) == 0) {
+				my_assert( sscanf( line, load_pc_p_str, reg ) == 1, "internal error" );
+				int l = strlen(reg);
+				if(l && reg[l-1] == ',') reg[l-1] = 0;
+				for( r=REGISTER_FIRST; r<REGISTER_COUNT; r++ ) {
+					if(strcmp(reg_names[r],reg) == 0) {
+						if(!regs_used[r]) {
+
+							// Found it. now check eax usage.
+							if(r == EAX || !regs_used[EAX]) {
+								*where = i;
+								return(r);
+							}
+
+							// eax has been used, but the target is some other reg.
+							// If eax was used previously only once, swap the lines.
+							// Otherwise give up.
+							if(eax_count == 1 && regs_used[EAX] != i) {
+								swap_lines( regs_used[EAX], i );
+								*where = regs_used[EAX];
+								return(r);
+							}
+						}
+						break;
+					}
+				}
+				return(REGISTER_NONE);
+			}
+		}
+
+		for( r=REGISTER_FIRST; r<REGISTER_COUNT; r++ ) {
+			if(reg_used_on_line(line,reg_names[r])) {
+				if(!regs_used[r]) regs_used[r] = i;
+				if(r == EAX) eax_count++;
+			}
+		}
+	}
+	return(REGISTER_NONE);
+}
+
+int remove_SHORT( char *line )
+{
+	char *p;
+
+	p = strstr( line, "\tSHORT" );
+	if(p) {
+		// Remove \tSHORT (length==6) from the line.
+		memmove( p, p+6, strlen(p+6)+1 );
+		return(1);
+	}
+	return(0);
+}
+
+// Not a real distance in bytes, but a distance in non-empty lines.
+// Best we can do without actually assembling the thing
+int count_distance( int x1, int x2 )
+{
+	int ret = 0;
+
+	if(x1 > x2) {
+		int tmp = x1;
+		x1 = x2;
+		x2 = tmp;
+	}
+
+	for( int i=x1+1; i<x2; i++ ) {
+		char *line = lines[i];
+		if(*line != 0 && *line != '\r' && *line != '\n' && *line != ';') {
+			ret++;
+		}
+	}
+	return(ret);
+}
+
+void analyze_short_jumps( void )
+{
+	char *line;
+	int i;
+
+	#define MAX_LABELS 100
+	int l_labels[MAX_LABELS], l_label_lines[MAX_LABELS], l_label_count = 0;
+
+	for(i=1; i<line_count; i++) {
+		line = lines[i];
+		if(strncmp(line,LABEL,strlen(LABEL)) == 0) {
+			l_label_lines[l_label_count] = i;
+			my_assert( l_label_count < MAX_LABELS, "too many labels\n" );
+			l_labels[l_label_count++] = atoi(&line[strlen(LABEL)]);
+		}
+	}
+	if(!l_label_count) return;
+	for(i=1; i<line_count; i++) {
+		char *lstart;
+		line = lines[i];
+		if( symused( line, "SHORT" ) &&
+		    strncmp(line,LABEL,strlen(LABEL)) != 0 &&
+				(lstart = strstr(line,LABEL)) &&
+				strncmp(line,MAYBE_BRANCH_COMMAND,strlen(MAYBE_BRANCH_COMMAND)) == 0)
+		{
+			int lval = atoi(lstart+strlen(LABEL));
+			if(lval) {
+				for( int j=0; j<l_label_count; j++ ) {
+					if(l_labels[j] == lval) {
+						int dist = count_distance(i,l_label_lines[j]);
+						if(dist > MAX_TOLERATED_SHORT_DISTANCE) {
+							remove_SHORT( line );
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+void remove_tail_recursion( void )
+{
+	char *line;
+	int i;
+	char tmp[MAX_LINE_LEN];
+
+	for(i=line_count-1; i>=1; i--) {
+		line = lines[i];
+		if(strncmp(line,TAIL_RECURSION_01,strlen(TAIL_RECURSION_01)) == 0 ||
+		   strncmp(line,TAIL_RECURSION_02,strlen(TAIL_RECURSION_02)) == 0)
+		{
+			strcpy( tmp, line );
+			char *p = strstr( tmp, "jmp" );
+			my_assert( p != NULL, "illegal tail recursion definition\n" );
+
+			memmove( p+1, p, strlen(p)+1 );
+			memcpy( p, "call", 4 );
+
+			make_room( i, 1 );
+			replace_line( i, tmp );
+			replace_line( i+1, RET_COMMAND_LINE );
+		}
+	}
+}
+
+void check_processor_level( char *line )
+{
+	if(strncmp(line,MODE_386,strlen(MODE_386)) == 0) {
+		memcpy( line, MODE_486, strlen(MODE_486) );
+	}
+}
+
+void optimize( void )
+{
+	int i, pc_reg_atend, pc_reg_atend2, pc_reg_atstart, pc_reload_line_atstart;
+	char last_line[MAX_LINE_LEN];
+	char *line;
+
+	my_assert( line_count >= 2, "strange short function\n" );
+	my_assert( strstr(lines[0],FUNC_START_COMMAND) != 0, "PROC not found\n" );
+	my_assert( strstr(lines[line_count-1],FUNC_END_COMMAND) != 0, "ENDP not found\n" );
+
+	remove_unnecessary_labels();
+
+	// May need to "undo" some compiler tail recursion.
+	remove_tail_recursion();
+
+	strcpy( last_line, lines[--line_count] );
+
+	if(optimize_bswap_hack) {
+		bswaps_patched += patch_bswap(&xchg_patched);
+	}
+
+	if(optimize_retval_usage) {
+// #if HAVE_VOID_CPU_FUNCS
+		retvals_deleted += check_retval_usage();
+// #endif
+	}
+
+	if(optimize_stack_frames) {
+		stack_frames_deleted += remove_stack_frames_esp();
+		stack_frames_deleted += remove_stack_frames_ebp();
+	}
+
+	if(optimize_register_usage) {
+		for( int reg=REGISTER_FIRST; reg<REGISTER_COUNT; reg ++ ) {
+			regs_deleted[reg] += check_register_usage( reg_names[reg] );
+		}
+	}
+
+	// Need to insert labels/jumps for extra ret commands.
+	// Otherwise some short jumps would be too far.
+	// Adjusting these would be too much trouble.
+	int ret_count = 0;
+	char label[100];
+	char jmp_str[100];
+
+	ret_count = get_ret_lines( 0, MAX_RETURNS );
+
+	int need_label = 0;
+	int need_analyze_jumps = 0;
+
+	// If we insert code in the middle of the fuction, we may need
+	// to remove some SHORTs. Checked in analyze_short_jumps()
+	if(ret_count > 1) {
+		if(separate_exit_points) {
+			need_label = 0;
+			need_analyze_jumps = 1;
+		} else {
+			need_label = 1;
+		}
+	}
+	ret_count = 0;
+
+	// The loop also makes the chaining and optimizes pc usage
+
+	for(i=line_count-1; i>=0; i--) {
+		line = lines[i];
+		if(strncmp(line,RET_COMMAND,strlen(RET_COMMAND)) == 0) {
+			if(ret_count++ == 0 || separate_exit_points) {
+				// Last return statement, chain to the next instruction.
+				if(optimize_pc_usage_atend) {
+					pc_reg_atend = get_pc_register_backwards(i-1);
+				} else {
+					pc_reg_atend = REGISTER_NONE;
+				}
+				int j = i;
+				if(need_label) {
+					sprintf( label, OUR_LABEL, label_count++ );
+					sprintf( jmp_str, "%s:\n", label );
+					replace_line( i, jmp_str );
+					j++;
+				} else {
+					delete_line( i );
+				}
+				insert_tail( j, pc_reg_atend );
+			} else {
+				int j = i;
+				if(optimize_pc_usage_atend) {
+					pc_reg_atend2 = get_pc_register_backwards(i-1);
+				} else {
+					pc_reg_atend2 = REGISTER_NONE;
+				}
+				if( pc_reg_atend != pc_reg_atend2 && pc_reg_atend != REGISTER_NONE ) {
+					// These are mostly exceptions
+					my_assert( need_label, "label usage was mispredicted\n" );
+					sprintf(
+						jmp_str,
+						"\tmov\t%s, DWORD PTR %s\n",
+						reg_names[pc_reg_atend],
+						REGS_PC_P_DECORATED
+					);
+					make_room( j, 1 );
+					replace_line( j, jmp_str );
+					j++;
+				}
+				sprintf( jmp_str, "\tjmp\t%s\n", label );
+				replace_line( j, jmp_str );
+			}
+			ret_deleted++;
+		}
+	}
+
+	if(ret_deleted > 1 && need_analyze_jumps) analyze_short_jumps();
+
+	// Optimize pc usage at function start.
+	// Old cpu's benefit most of this, PII not so much.
+
+	if(optimize_pc_usage_atstart) {
+		pc_reg_atstart = get_pc_register_forwards(1,&pc_reload_line_atstart);
+
+		if(pc_reg_atstart != REGISTER_NONE) {
+			pc_p_reloads_deleted2++;
+			if(pc_reg_atstart == EAX) {
+				delete_line(pc_reload_line_atstart);
+			} else {
+				char reload_line[MAX_LINE_LEN];
+				sprintf( reload_line, MOV_REG_EAX, reg_names[pc_reg_atstart] );
+				replace_line( pc_reload_line_atstart, reload_line );
+			}
+		}
+	}
+
+	if(optimize_stack_frames) {
+		stack_frames_deleted += remove_stack_frames_ebp();
+	}
+
+	insert_line( last_line );
+}
+
+int main( int argc, char **argv )
+{
+	char *fname = argv[1];
+	FILE *f1, *f2;
+	char line[1024];
+	int gathering = 0;
+	long f1_size = 0, bytes_read = 0;
+	int percent_complete = 0;
+
+	printf( "UAE cpu core optimizer v1.0.7 for Visual C++ 5.0 and 6.0 by Lauri Pesonen\n" );
+
+  if (argc != 2 && argc != 3) {
+		printf("usage: %s <cpuemu.asm> [<outfile.asm>]\n", *argv);
+		return 0;
+  }
+
+	if(argc == 2) {
+		strcpy( destname, TEMP_FILE_NAME );
+	} else {
+		strcpy( destname, argv[2] );
+	}
+
+	sprintf( store_pc_p_str, STORE_PC_P_COMMAND, REGS_PC_P_DECORATED, "%s" );
+	sprintf( load_pc_p_str, LOAD_PC_P_COMMAND, "%s", REGS_PC_P_DECORATED );
+
+	f1 = fopen( fname, "r" );
+	if(!f1) {
+		printf( "failed to open %s\n", fname );
+		exit(1);
+	}
+
+	if(0 == fseek( f1, 0, SEEK_END )) {
+		f1_size = ftell(f1);
+		fseek( f1, 0, SEEK_SET );
+	}
+
+	unlink( destname );
+	f2 = fopen( destname, "w" );
+	if(!f2) {
+		printf( "failed to create %s\n", destname );
+		fclose(f1);
+		exit(1);
+	}
+
+	init_lines();
+
+	source_line_count = 0;
+	label_count = 0;
+
+	function_count = 0;
+	ret_deleted = 0;
+	retvals_deleted = 0;
+	bswaps_patched = 0;
+	xchg_patched = 0;
+	pc_p_reloads_deleted = 0;
+	pc_p_reloads_deleted2 = 0;
+	stack_frames_deleted = 0;
+	memset( regs_deleted, 0, sizeof(regs_deleted) );
+
+	printf( "Optimizing..." );
+	progress(percent_complete);
+
+	while(fgets( line, sizeof(line), f1 )) {
+		source_line_count++;
+
+		// bswap requires 486 or later.
+		check_processor_level( line );
+
+		bytes_read += strlen(line);
+		if(f1_size > 0) {
+			int new_percent = bytes_read * 100 / f1_size;
+			if(new_percent > percent_complete) {
+				percent_complete = new_percent;
+				progress(percent_complete);
+			}
+		}
+
+		if(gathering) {
+			insert_line(line);
+			if(strstr(line,FUNC_END_COMMAND)) {
+				optimize();
+				write_lines(f2);
+				gathering = 0;
+			}
+		} else {
+			if(strstr(line,FUNC_START_COMMAND)) {
+				function_count++;
+				gathering = 1;
+				insert_line(line);
+			} else {
+				write_line(f2,line);
+			}
+		}
+	}
+
+	progress(-1);
+	printf( "done.\n" );
+	statistics();
+	my_assert( line_count == 0, "unexpected end of file\n" );
+
+	free_lines();
+	fclose(f1);
+	fclose(f2);
+	if(argc == 2) {
+		unlink(fname);
+		rename(destname,fname);
+	}
+
+	return 0;
+}
+
+// <EOF:vc5opti.cpp>
