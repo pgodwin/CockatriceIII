@@ -138,7 +138,7 @@ char *strdup(const char *s)
  */
 
 //int main(int argc, char **argv)
-#ifdef _OSX_		//does this one work?
+#ifdef __APPLE__		
  #ifdef __cplusplus
        extern "C"
        #endif

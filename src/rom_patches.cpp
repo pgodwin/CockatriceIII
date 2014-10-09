@@ -743,7 +743,6 @@ void InstallDrivers(uint32 pb)
 
 void InstallSERD(void)
 {
-return;
 	D(bug("InstallSERD\n"));
 
 	// All drivers are inside the SERD resource

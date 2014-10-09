@@ -1,0 +1,5 @@
+This is the long lost vc5opti which should optimize output from Visual C++ 5.0 and 5.0.  It sits between Visual C++ and MASM.
+
+I haven't tested it out yet.
+
+I have found out from looking that the optimization program for GCC doesn't do anything and I wonder with modern compilers if it's even needed.  But I'm not going to throw this one out.

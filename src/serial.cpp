@@ -51,6 +51,7 @@ SERDPort *the_serd_port[2];
 int16 SerialOpen(uint32 pb, uint32 dce, int port)
 {
 	D(bug("SerialOpen port %d, pb %08lx, dce %08lx\n", port, pb, dce));
+return openErr;	//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
 
 	if (port == 0 || port == 2) {
 
@@ -117,6 +118,7 @@ int16 SerialOpen(uint32 pb, uint32 dce, int port)
 int16 SerialPrime(uint32 pb, uint32 dce, int port)
 {
 	D(bug("SerialPrime port %d, pb %08lx, dce %08lx\n", port, pb, dce));
+return readErr;	//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
 
 	// Error if port is not open
 	SERDPort *the_port = the_serd_port[port >> 1];
@@ -147,6 +149,7 @@ int16 SerialControl(uint32 pb, uint32 dce, int port)
 {
 	uint16 code = ReadMacInt16(pb + csCode);
 	D(bug("SerialControl %d, port %d, pb %08lx, dce %08lx\n", code, port, pb, dce));
+return notOpenErr;	//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
 
 	// Error if port is not open
 	SERDPort *the_port = the_serd_port[port >> 1];
@@ -171,6 +174,7 @@ int16 SerialStatus(uint32 pb, uint32 dce, int port)
 {
 	uint16 code = ReadMacInt16(pb + csCode);
 	D(bug("SerialStatus %d, port %d, pb %08lx, dce %08lx\n", code, port, pb, dce));
+return notOpenErr;	//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
 
 	// Error if port is not open
 	SERDPort *the_port = the_serd_port[port >> 1];
@@ -201,6 +205,7 @@ int16 SerialStatus(uint32 pb, uint32 dce, int port)
 int16 SerialClose(uint32 pb, uint32 dce, int port)
 {
 	D(bug("SerialClose port %d, pb %08lx, dce %08lx\n", port, pb, dce));
+return noErr;	//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
 
 	if (port == 0 || port == 2) {
 
@@ -230,7 +235,8 @@ int16 SerialClose(uint32 pb, uint32 dce, int port)
 
 static void serial_irq(SERDPort *p)
 {
-	if (p->is_open) {
+//KEEP THIS CODE close... I was getting some weird virtual function failure @ runtime.
+/*	if (p->is_open) {
 		if (p->read_pending && p->read_done) {
 			EnqueueMac(p->input_dt, 0xd92);
 			p->read_pending = p->read_done = false;
@@ -240,12 +246,13 @@ static void serial_irq(SERDPort *p)
 			p->write_pending = p->write_done = false;
 		}
 	}
+*/
 }
 
 void SerialInterrupt(void)
 {
 	D(bug("SerialIRQ\n"));
 
-	serial_irq(the_serd_port[0]);
-	serial_irq(the_serd_port[1]);
+//	serial_irq(the_serd_port[0]);
+//	serial_irq(the_serd_port[1]);
 }

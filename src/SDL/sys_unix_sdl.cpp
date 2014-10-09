@@ -88,6 +88,8 @@ struct file_handle {
 // File handle of first floppy drive (for SysMountFirstFloppy())
 static file_handle *first_floppy = NULL;
 
+static void Sys_find_hfs_partition(file_handle *fh);
+
 
 /*
  *  Initialization
@@ -311,6 +313,9 @@ void *Sys_open(const char *name, bool read_only)
 			lseek(fd, 0, SEEK_SET);
 			read(fd, data, 256);
 			FileDiskLayout(size, data, fh->start_byte, fh->file_size);
+			lseek(fd, 0, SEEK_SET);
+			Sys_find_hfs_partition(fh);	
+			lseek(fd, 0, SEEK_SET);
 		} else {
 			struct stat st;
 			if (fstat(fd, &st) == 0) {
@@ -969,4 +974,39 @@ void SysCDGetVolume(void *arg, uint8 &left, uint8 &right)
 		right = vol.vol[1];
 #endif
 	}
+}
+
+
+
+/*
+ *  Find HFS partition, set info->start_byte (0 = no HFS partition)
+ */
+
+static void Sys_find_hfs_partition(file_handle *fh)
+{
+        fh->start_byte = 0;
+        uint8 *map = new uint8[512];
+
+        // Search first 64 blocks for HFS partition
+        for (int i=0; i<64; i++) {
+                if (Sys_read(fh, map, i * 512, 512) != 512)
+                        break;
+
+                // Skip driver descriptor
+                uint16 sig = ntohs(((uint16 *)map)[0]);
+                if (sig == 'ER')
+                        continue;
+
+                // No partition map? Then look at next block
+                if (sig != 'PM')
+                        continue;
+
+                // Partition map found, Apple HFS partition?
+                if (strcmp((char *)(map + 48), "Apple_HFS") == 0) {
+                        fh->start_byte = ntohl(((uint32 *)map)[2]) << 9;
+                        D(bug(" HFS partition found at %ld, %ld blocks\n", info->start_byte, ntohl(((uint32 *)map)[3])));
+                        break;
+                }
+        }
+        delete[] map;
 }

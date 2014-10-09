@@ -20,14 +20,16 @@
 
 #include "sysdeps.h"
 
-#ifndef WIN32
-#include <sys/ioctl.h>
-#include <sys/poll.h>
-#include <SDL/SDL.h>
-#include <SDL/SDL_thread.h>
-#else
+#ifdef WIN32
+#include <windows.h>
+//#include <sys\ioctl.h>	both for visual C++??
+//#include <sys\poll.h>
 #include <SDL\SDL.h>
 #include <SDL\SDL_thread.h>
+#else
+#include <SDL/SDL.h>
+#include <SDL/SDL_thread.h>
+#include <dlfcn.h>
 #endif
 
 #include <errno.h>
@@ -35,14 +37,46 @@
 #include <stdlib.h>	//for malloc/free
 #include <string.h>	//for memcpy
 
+#if defined __APPLE__ || defined __linux
+#define UNIX
+#endif
+
 #ifdef UNIX
 #include <pcap.h>
+typedef int (*_func)();		//dlopen
 #else
 #include <pcap\pcap.h>
 #endif
 pcap_t *pcap;
 const unsigned char *data;
 struct pcap_pkthdr h;
+
+/**************dynamic pcap*************/
+#ifdef WIN32
+static HINSTANCE hLib = 0;                      /* handle to DLL */
+static char* lib_name = "wpcap.dll";
+#elif __APPLE__
+static void *hLib = 0;                      /* handle to Library */
+static char* lib_name = "/usr/lib/libpcap.A.dylib";
+#elif __linux
+static void *hLib = 0;                      /* handle to Library */
+static char* lib_name = "libpcap.so";
+#define __cdecl
+#endif
+
+typedef pcap_t* (__cdecl * PCAP_OPEN_LIVE)(const char *, int, int, int, char *);
+typedef int (__cdecl * PCAP_SENDPACKET)(pcap_t* handle, const u_char* msg, int len);
+typedef int (__cdecl * PCAP_SETNONBLOCK)(pcap_t *, int, char *);
+typedef const u_char*(__cdecl *PCAP_NEXT)(pcap_t *, struct pcap_pkthdr *);
+typedef const char*(__cdecl *PCAP_LIB_VERSION)(void);
+
+PCAP_LIB_VERSION 	_pcap_lib_version;
+PCAP_OPEN_LIVE		_pcap_open_live;
+PCAP_SENDPACKET		_pcap_sendpacket;
+PCAP_SETNONBLOCK	_pcap_setnonblock;
+PCAP_NEXT		_pcap_next;
+
+/****************/
 
 //SLIRP stuff
 extern "C" int slirp_init(void);
@@ -85,7 +119,7 @@ static SDL_mutex *slirp_select_poll_mutex = NULL;
 static SDL_mutex *slirp_packet_xfer = NULL;
 */
 static SDL_mutex *slirp_queue_mutex = NULL;
-
+static SDL_mutex *slirp_mutex = NULL;
 
 
 #include "cpu_emulation.h"
@@ -189,7 +223,8 @@ void EtherInit(void)
 	is_slirp = (strncmp(name, "slirp", 5) == 0);
 	if(!(is_ethertap || is_slirp))
 		is_pcap=1;
-	printf("one or the other %d %d %d!?\n",is_ethertap,is_slirp,is_pcap);
+	//printf("one or the other %d %d %d!?\n",is_ethertap,is_slirp,is_pcap);
+	printf("Using %s%s%s",is_ethertap?"ethertap(not implimented)\n":"",is_slirp ? "SLiRP\n":"",is_pcap ? "PCAP":"");
 
 	// Open sheep_net or ethertap device
 	char dev_name[16];
@@ -197,8 +232,35 @@ void EtherInit(void)
 	if (is_pcap)
 		{
 		memset(errbuf,0,sizeof(errbuf));
-		if((pcap=pcap_open_live(name,1518,1,0,errbuf))==0)
+#ifdef WIN32
+		 hLib = LoadLibraryA(lib_name);
+			if(hLib==0)
+			{printf("Failed to load %s\n",lib_name);is_pcap=0;return ;}
+		_pcap_lib_version =(PCAP_LIB_VERSION)GetProcAddress(hLib,"pcap_lib_version");
+		_pcap_open_live=(PCAP_OPEN_LIVE)GetProcAddress(hLib,"pcap_open_live");		
+		_pcap_sendpacket=(PCAP_SENDPACKET)GetProcAddress(hLib,"pcap_sendpacket");		
+		_pcap_setnonblock=(PCAP_SETNONBLOCK)GetProcAddress(hLib,"pcap_setnonblock");	
+		_pcap_next=(PCAP_NEXT)GetProcAddress(hLib,"pcap_next");		
+#else
+		hLib =  hLib = dlopen(lib_name, RTLD_NOW);
+                        if(hLib==0)
+                        {printf("Failed to load %s\n",lib_name);is_pcap=0;return ;}
+                _pcap_open_live=(PCAP_OPEN_LIVE)dlsym(hLib,"pcap_open_live");
+                _pcap_sendpacket=(PCAP_SENDPACKET)dlsym(hLib,"pcap_sendpacket");
+                _pcap_setnonblock=(PCAP_SETNONBLOCK)dlsym(hLib,"pcap_setnonblock");
+                _pcap_next=(PCAP_NEXT)dlsym(hLib,"pcap_next");
+		_pcap_lib_version =(PCAP_LIB_VERSION)dlsym(hLib,"pcap_lib_version");
+#endif
+		if(_pcap_lib_version && _pcap_open_live && _pcap_sendpacket && _pcap_setnonblock && _pcap_next)
+			{
+			printf(" version [%s]\n",_pcap_lib_version());
+		if((pcap=_pcap_open_live(name,1518,1,0,errbuf))==0)
 			{printf("ethernet.c: pcap_open_live error on %s!\n",name);exit(-1);}
+			}
+		else	{	
+		printf("%d %d %d %d %d %d\n",_pcap_lib_version, _pcap_open_live,_pcap_sendpacket,_pcap_setnonblock,_pcap_next);
+			is_pcap=0;
+			}
 		}
 	if (is_slirp)
 		{
@@ -206,6 +268,7 @@ void EtherInit(void)
 		rc=slirp_init();
 		slirpq = QueueCreate();
 		slirp_queue_mutex = SDL_CreateMutex();
+		slirp_mutex=SDL_CreateMutex();
 		slirp_inited=1;
 		}
 
@@ -214,8 +277,10 @@ void EtherInit(void)
 	//ioctl(fd, FIONBIO, &nonblock);
 	// Set nonblocking I/O
 	if(is_pcap)
-	{
-		if (pcap_setnonblock(pcap,1,errbuf))
+	{int rc;
+		//if (_pcap_setnonblock(pcap,1,errbuf))
+		rc=_pcap_setnonblock(pcap,1,errbuf);
+		if(rc>0)
 			{printf("Error going into nonblocking.\n[%s]\n", errbuf);
 			exit(-1);}
 	}
@@ -396,10 +461,12 @@ int16 ether_write(uint32 wds)
 
 	// Transmit packet
 	if(is_slirp){
+		SDL_LockMutex(slirp_mutex);
 		slirp_input(packet,len);
+		SDL_UnlockMutex(slirp_mutex);
 		return noErr;}
 	if(is_pcap)
-        if (pcap_sendpacket(pcap, packet, len) < 0) {
+        if (_pcap_sendpacket(pcap, packet, len) < 0) {
                 printf("WARNING: Couldn't transmit packet\n");
                 return excessCollsns;
 	} else
@@ -440,7 +507,7 @@ int receive_func(void *arg)
 
 	if(is_pcap)
 		{
-		data=pcap_next(pcap,&h);
+		data=_pcap_next(pcap,&h);
 		}
 	if(h.caplen>0)
 		{
@@ -570,7 +637,10 @@ void slirp_tic(void)
         FD_ZERO(&rfds);
         FD_ZERO(&wfds);
         FD_ZERO(&xfds);
+	SDL_LockMutex(slirp_mutex);
        timeout=slirp_select_fill(&nfds,&rfds,&wfds,&xfds); //this can crash
+	SDL_UnlockMutex(slirp_mutex);
+
 	if(timeout<0)
 		timeout=500;
        tv.tv_sec=0;
@@ -578,7 +648,9 @@ void slirp_tic(void)
 
        ret2 = select(nfds + 1, &rfds, &wfds, &xfds, &tv);
         if(ret2>=0){
+	SDL_LockMutex(slirp_mutex);
        slirp_select_poll(&rfds, &wfds, &xfds);
+	SDL_UnlockMutex(slirp_mutex);
           }
        }//end if slirp inited
 }

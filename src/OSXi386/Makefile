@@ -22,9 +22,9 @@ CPPFLAGS =  -I../include -I. -I../uae_cpu -I../Unix
 #DEFS = -DHAVE_CONFIG_H  -DENABLE_MON=0 -DENABLE_XF86_DGA=0 -DENABLE_FBDEV_DGA=1 -DENABLE_XF86_VIDMODE=0 -DENABLE_GTK=0 -DENABLE_ESD=0 -DREGPARAM="__attribute__((regparm(3)))" -DX86_ASSEMBLY -D_REENTRANT -DDATADIR=\"$(datadir)/$(APP)\"
 DEFS = -DHAVE_CONFIG_H  -DX86_ASSEMBLY -D_REENTRANT -DREGPARAM="__attribute__((regparm(3)))"
 LDFLAGS = 
-LIBS =../slirp/slirpOSX.a -lpthread -lpcap  -framework SDL -framework cocoa sdlmain.o #-lX11 -lXext 
+LIBS =sdlmain.o ../slirp/slirpOSX.a -lpthread -framework SDL -framework cocoa #-lX11 -lXext 
 #SYSSRCS = Linux/ether_linux.cpp Linux/scsi_linux.cpp audio_oss_esd.cpp  ../dummy/prefs_editor_dummy.cpp 
-SYSSRCS = ../pcap/sdl_pcap.cpp ../sdl/audio_sdl.cpp ../dummy/scsi_dummy.cpp  ../dummy/prefs_editor_dummy.cpp 
+SYSSRCS = ../SDL/sdl_pcap.cpp ../sdl/audio_sdl.cpp ../dummy/scsi_dummy.cpp  ../dummy/prefs_editor_dummy.cpp 
 #CPUSRCS = ../uae_cpu/basilisk_glue.cpp ../uae_cpu/memory.cpp ../uae_cpu/newcpu.cpp ../uae_cpu/readcpu.cpp ../uae_cpu/fpu/fpu_uae.cpp cpustbl.cpp cpudefs.cpp cpufast1.s cpufast2.s cpufast3.s cpufast4.s cpufast5.s cpufast6.s cpufast7.s cpufast8.s
 CPUSRCS = ../uae_cpu/basilisk_glue.cpp ../uae_cpu/memory.cpp ../uae_cpu/newcpu.cpp ../uae_cpu/readcpu.cpp ../uae_cpu/fpu/fpu_uae.cpp cpustbl.cpp cpudefs.cpp cpuemu.cpp
 INSTALL = /usr/bin/install -c
