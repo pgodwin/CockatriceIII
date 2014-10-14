@@ -146,9 +146,9 @@ int SDL_main(int argc, char *argv[])
 	// Start XPRAM watchdog thread
 	//right now dont need it
 	xpram_thread=SDL_CreateThread(xpram_func,NULL);
-	tick_func1Hz_thread=SDL_CreateThread(tick_func1Hz,NULL);
-	tick_func60Hz_thread=SDL_CreateThread(tick_func60Hz,NULL);
-	//tick_funcxxx_thread=SDL_CreateThread(tick_funcxxx,NULL);
+	//tick_func1Hz_thread=SDL_CreateThread(tick_func1Hz,NULL);
+	//tick_func60Hz_thread=SDL_CreateThread(tick_func60Hz,NULL);
+	tick_funcxxx_thread=SDL_CreateThread(tick_funcxxx,NULL);
 	
 	// Start 68k and jump to ROM boot routine
 	Start680x0();
@@ -241,6 +241,7 @@ static void one_tickbbbb(...)
 	if (ROMVersion != ROM_VERSION_CLASSIC || HasMacStarted()) {
 		SetInterruptFlag(INTFLAG_60HZ);
 		TriggerInterrupt();
+		slirp_tic();
 	}
 }
 
@@ -253,8 +254,8 @@ int tick_funcxxx(void *arg)
 		struct timespec req = {0, 16625000};
 		nanosleep(&req, NULL);
 #else
-		usleep(16625);
-		//Sleep(1000);
+		//usleep(16625);
+		Sleep(16);
 #endif
 
 		// Action

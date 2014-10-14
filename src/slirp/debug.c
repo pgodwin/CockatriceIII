@@ -291,12 +291,12 @@ mbufstats()
         lprint("  %6d mbufs queued as packets\r\n\r\n", if_queued);
 }
 
-void
-sockstats()
+
+void sockstats(void)
 {
 	char buff[256];
 	int n;
-	struct socket *so;
+	struct SLIRPsocket *so;
 
         lprint(" \r\n");
 	
@@ -332,7 +332,7 @@ sockstats()
 	}
 }
 
-#if 0
+#if 1
 void
 slirp_exit(exit_status)
 	int exit_status;
@@ -354,23 +354,24 @@ slirp_exit(exit_status)
 		icmpstats();
 		mbufstats();
 		sockstats();
-		allttystats();
-		vjstats();
+		fclose(dfd);
+//		allttystats();
+//		vjstats();
 	}
 	
-	for (ttyp = ttys; ttyp; ttyp = ttyp->next)
-	   tty_detached(ttyp, 1);
+//	for (ttyp = ttys; ttyp; ttyp = ttyp->next)
+//	   tty_detached(ttyp, 1);
 	
-	if (slirp_forked) {
-		/* Menendez time */
-		if (kill(getppid(), SIGQUIT) < 0)
-			lprint("Couldn't kill parent process %ld!\n",
-			    (long) getppid());
-    	}
+//	if (slirp_forked) {
+//		/* Menendez time */
+//		if (kill(getppid(), SIGQUIT) < 0)
+//			lprint("Couldn't kill parent process %ld!\n",
+//			    (long) getppid());
+//  	}
 	
 	/* Restore the terminal if we gotta */
-	if(slirp_tty_restore)
-	  tcsetattr(0,TCSANOW, &slirp_tty_settings);  /* NOW DAMMIT! */
-	exit(exit_status);
+//	if(slirp_tty_restore)
+//	  tcsetattr(0,TCSANOW, &slirp_tty_settings);  /* NOW DAMMIT! */
+//	exit(exit_status);
 }
 #endif

@@ -19,7 +19,7 @@ CXXFLAGS = -g -Os  -fomit-frame-pointer
 CPPFLAGS =  -I../include -I. -I../uae_cpu
 DEFS = -DHAVE_CONFIG_H  -DENABLE_MON=0 -DENABLE_XF86_DGA=0 -DENABLE_FBDEV_DGA=1 -DENABLE_XF86_VIDMODE=1 -DENABLE_GTK=0 -DENABLE_ESD=0 -DREGPARAM="__attribute__((regparm(3)))" -DX86_ASSEMBLY -D_REENTRANT -DDATADIR=\"$(datadir)/$(APP)\"
 LDFLAGS = 
-LIBS = ../slirp/slirplinux.a -lpthread -lSDL -lSDLmain -lpcap  #  -lSM -lICE  -lX11 -lXext  -lXxf86vm
+LIBS = ../slirp/slirplinuxi386.a -lpthread -lSDL -lSDLmain -lpcap  #  -lSM -lICE  -lX11 -lXext  -lXxf86vm
 SYSSRCS = ../pcap/sdl_pcap.cpp ../dummy/scsi_dummy.cpp audio_sdl.cpp  ../dummy/prefs_editor_dummy.cpp 
 #CPUSRCS = ../uae_cpu/basilisk_glue.cpp ../uae_cpu/memory.cpp ../uae_cpu/newcpu.cpp ../uae_cpu/readcpu.cpp ../uae_cpu/fpu/fpu_uae.cpp cpustbl.cpp cpudefs.cpp cpufast1.s cpufast2.s cpufast3.s cpufast4.s cpufast5.s cpufast6.s cpufast7.s cpufast8.s
 CPUSRCS = ../uae_cpu/basilisk_glue.cpp ../uae_cpu/memory.cpp ../uae_cpu/newcpu.cpp ../uae_cpu/readcpu.cpp ../uae_cpu/fpu/fpu_uae.cpp cpustbl.cpp cpudefs.cpp cpuemu.cpp

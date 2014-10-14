@@ -64,7 +64,7 @@ struct m_hdr {
 	int	mh_flags;	  /* Misc flags */
 
 	int	mh_size;		/* Size of data */
-	struct	socket *mh_so;
+	struct	SLIRPsocket *mh_so;
 	
 	caddr_t	mh_data;		/* Location of data */
 	int	mh_len;			/* Amount of data in this mbuf */

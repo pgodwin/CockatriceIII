@@ -32,15 +32,9 @@
 void Microseconds(uint32 &hi, uint32 &lo)
 {
 	D(bug("Microseconds\n"));
-#ifdef HAVE_CLOCK_GETTIME
-	struct timespec t;
-	clock_gettime(CLOCK_REALTIME, &t);
-	uint64 tl = (uint64)t.tv_sec * 1000000 + t.tv_nsec / 1000;
-#else
 	struct timeval t;
 	gettimeofday(&t, NULL);
 	uint64 tl = (uint64)t.tv_sec * 1000000 + t.tv_usec;
-#endif
 	hi = tl >> 32;
 	lo = tl;
 }
@@ -53,16 +47,8 @@ void Microseconds(uint32 &hi, uint32 &lo)
 uint32 TimerDateTime(void)
 {
 	time_t utc_now = time(NULL);
-#if defined(__linux__) || defined(__SVR4)
-	long tz = timezone;
-	time_t local_now = utc_now - tz;
-	if (daylight)
-		local_now += 3600;
-#elif defined(__FreeBSD__) || defined(__NetBSD__)
-	time_t local_now = utc_now + localtime(&utc_now)->tm_gmtoff;
-#else
 	time_t local_now = utc_now;
-#endif
+
 	return (uint32)local_now + TIME_OFFSET;
 }
 
@@ -73,11 +59,8 @@ uint32 TimerDateTime(void)
 
 void timer_current_time(tm_time_t &t)
 {
-#ifdef HAVE_CLOCK_GETTIME
-	clock_gettime(CLOCK_REALTIME, &t);
-#else
 	gettimeofday(&t, NULL);
-#endif
+
 }
 
 
@@ -87,21 +70,12 @@ void timer_current_time(tm_time_t &t)
 
 void timer_add_time(tm_time_t &res, tm_time_t a, tm_time_t b)
 {
-#ifdef HAVE_CLOCK_GETTIME
-	res.tv_sec = a.tv_sec + b.tv_sec;
-	res.tv_nsec = a.tv_nsec + b.tv_nsec;
-	if (res.tv_nsec >= 1000000000) {
-		res.tv_sec++;
-		res.tv_nsec -= 1000000000;
-	}
-#else
 	res.tv_sec = a.tv_sec + b.tv_sec;
 	res.tv_usec = a.tv_usec + b.tv_usec;
 	if (res.tv_usec >= 1000000) {
 		res.tv_sec++;
 		res.tv_usec -= 1000000;
 	}
-#endif
 }
 
 
@@ -111,21 +85,12 @@ void timer_add_time(tm_time_t &res, tm_time_t a, tm_time_t b)
 
 void timer_sub_time(tm_time_t &res, tm_time_t a, tm_time_t b)
 {
-#ifdef HAVE_CLOCK_GETTIME
-	res.tv_sec = a.tv_sec - b.tv_sec;
-	res.tv_nsec = a.tv_nsec - b.tv_nsec;
-	if (res.tv_nsec < 0) {
-		res.tv_sec--;
-		res.tv_nsec += 1000000000;
-	}
-#else
 	res.tv_sec = a.tv_sec - b.tv_sec;
 	res.tv_usec = a.tv_usec - b.tv_usec;
 	if (res.tv_usec < 0) {
 		res.tv_sec--;
 		res.tv_usec += 1000000;
 	}
-#endif
 }
 
 
@@ -135,17 +100,10 @@ void timer_sub_time(tm_time_t &res, tm_time_t a, tm_time_t b)
 
 int timer_cmp_time(tm_time_t a, tm_time_t b)
 {
-#ifdef HAVE_CLOCK_GETTIME
-	if (a.tv_sec == b.tv_sec)
-		return a.tv_nsec - b.tv_nsec;
-	else
-		return a.tv_sec - b.tv_sec;
-#else
 	if (a.tv_sec == b.tv_sec)
 		return a.tv_usec - b.tv_usec;
 	else
 		return a.tv_sec - b.tv_sec;
-#endif
 }
 
 
@@ -155,17 +113,6 @@ int timer_cmp_time(tm_time_t a, tm_time_t b)
 
 void timer_mac2host_time(tm_time_t &res, int32 mactime)
 {
-#ifdef HAVE_CLOCK_GETTIME
-	if (mactime > 0) {
-		// Time in milliseconds
-		res.tv_sec = mactime / 1000;
-		res.tv_nsec = (mactime % 1000) * 1000000;
-	} else {
-		// Time in negative microseconds
-		res.tv_sec = -mactime / 1000000;
-		res.tv_nsec = (-mactime % 1000000) * 1000;
-	}
-#else
 	if (mactime > 0) {
 		// Time in milliseconds
 		res.tv_sec = mactime / 1000;
@@ -175,7 +122,6 @@ void timer_mac2host_time(tm_time_t &res, int32 mactime)
 		res.tv_sec = -mactime / 1000000;
 		res.tv_usec = -mactime % 1000000;
 	}
-#endif
 }
 
 
@@ -190,14 +136,11 @@ int32 timer_host2mac_time(tm_time_t hosttime)
 	if (hosttime.tv_sec < 0)
 		return 0;
 	else {
-#ifdef HAVE_CLOCK_GETTIME
-		uint64 t = (uint64)hosttime.tv_sec * 1000000 + hosttime.tv_nsec / 1000;
-#else
 		uint64 t = (uint64)hosttime.tv_sec * 1000000 + hosttime.tv_usec;
-#endif
 		if (t > 0x7fffffff)
 			return t / 1000;	// Time in milliseconds
 		else
 			return -t;			// Time in negative microseconds
 	}
 }
+

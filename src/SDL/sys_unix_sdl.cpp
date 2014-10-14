@@ -1010,3 +1010,24 @@ static void Sys_find_hfs_partition(file_handle *fh)
         }
         delete[] map;
 }
+
+
+void QuitEmulator()
+{
+	fflush(stdout);
+	
+	exit(0);
+}
+
+
+
+// Let's sleep!
+
+void idle_wait(void)
+{
+
+	// Fallback: sleep 10 ms
+	//Delay_usec(10000);
+	usleep(10);
+
+}

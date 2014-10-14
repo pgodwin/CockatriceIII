@@ -46,7 +46,7 @@ u_int32_t        tcp_now;                /* for RFC 1323 timestamps */
 void
 tcp_fasttimo()
 {
-	register struct socket *so;
+	register struct SLIRPsocket *so;
 	register struct tcpcb *tp;
 
 	DEBUG_CALL("tcp_fasttimo");
@@ -71,7 +71,7 @@ tcp_fasttimo()
 void
 tcp_slowtimo()
 {
-	register struct socket *ip, *ipnxt;
+	register struct SLIRPsocket *ip, *ipnxt;
 	register struct tcpcb *tp;
 	register int i;
 

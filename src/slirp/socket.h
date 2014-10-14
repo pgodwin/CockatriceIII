@@ -17,8 +17,8 @@
  * Our socket structure
  */
 
-struct socket {
-  struct socket *so_next,*so_prev;      /* For a linked list of sockets */
+struct SLIRPsocket {
+  struct SLIRPsocket *so_next,*so_prev;      /* For a linked list of sockets */
 
   int s;                           /* The actual socket */
 
@@ -71,7 +71,7 @@ struct socket {
 #define SS_FACCEPTCONN		0x100	/* Socket is accepting connections from a host on the internet */
 #define SS_FACCEPTONCE		0x200	/* If set, the SS_FACCEPTCONN socket will die after one accept */
 
-extern struct socket tcb;
+extern struct SLIRPsocket tcb;
 
 
 #if defined(DECLARE_IOVEC) && !defined(HAVE_READV)
@@ -82,23 +82,23 @@ struct iovec {
 #endif
 
 void so_init _P((void));
-struct socket * solookup _P((struct socket *, struct in_addr, u_int, struct in_addr, u_int));
-struct socket * socreate _P((void));
-void sofree _P((struct socket *));
-int soread _P((struct socket *));
-void sorecvoob _P((struct socket *));
-int sosendoob _P((struct socket *));
-int sowrite _P((struct socket *));
-void sorecvfrom _P((struct socket *));
-int sosendto _P((struct socket *, struct mbuf *));
-struct socket * solisten _P((u_int, u_int32_t, u_int, int));
-void sorwakeup _P((struct socket *));
-void sowwakeup _P((struct socket *));
-void soisfconnecting _P((register struct socket *));
-void soisfconnected _P((register struct socket *));
-void sofcantrcvmore _P((struct  socket *));
-void sofcantsendmore _P((struct socket *));
-void soisfdisconnected _P((struct socket *));
-void sofwdrain _P((struct socket *));
+struct SLIRPsocket * solookup _P((struct SLIRPsocket *, struct in_addr, u_int, struct in_addr, u_int));
+struct SLIRPsocket * socreate _P((void));
+void sofree _P((struct SLIRPsocket *));
+int soread _P((struct SLIRPsocket *));
+void sorecvoob _P((struct SLIRPsocket *));
+int sosendoob _P((struct SLIRPsocket *));
+int sowrite _P((struct SLIRPsocket *));
+void sorecvfrom _P((struct SLIRPsocket *));
+int sosendto _P((struct SLIRPsocket *, struct mbuf *));
+struct SLIRPsocket * solisten _P((u_int, u_int32_t, u_int, int));
+void sorwakeup _P((struct SLIRPsocket *));
+void sowwakeup _P((struct SLIRPsocket *));
+void soisfconnecting _P((register struct SLIRPsocket *));
+void soisfconnected _P((register struct SLIRPsocket *));
+void sofcantrcvmore _P((struct SLIRPsocket *));
+void sofcantsendmore _P((struct SLIRPsocket *));
+void soisfdisconnected _P((struct SLIRPsocket *));
+void sofwdrain _P((struct SLIRPsocket *));
 
 #endif /* _SOCKET_H_ */

@@ -44,7 +44,7 @@
 
 struct udpstat udpstat;
 
-struct socket udb;
+struct SLIRPsocket udb;
 
 /*
  * UDP protocol implementation.
@@ -56,7 +56,7 @@ int	udpcksum = 1;
 int	udpcksum = 0;		/* XXX */
 #endif
 
-struct	socket *udp_last_so = &udb;
+struct	SLIRPsocket *udp_last_so = &udb;
 
 void
 udp_init()
@@ -77,7 +77,7 @@ udp_input(m, iphlen)
 /*	struct mbuf *opts = 0;*/
 	int len;
 	struct ip save_ip; 
-	struct socket *so;
+	struct SLIRPsocket *so;
 	
 	DEBUG_CALL("udp_input");
 	DEBUG_ARG("m = %lx", (long)m);
@@ -164,7 +164,7 @@ udp_input(m, iphlen)
 	so = udp_last_so;
 	if (so->so_lport != uh->uh_sport ||
 	    so->so_laddr.s_addr != ip->ip_src.s_addr) {
-		struct socket *tmp;
+		struct SLIRPsocket *tmp;
 		
 		for (tmp = udb.so_next; tmp != &udb; tmp = tmp->so_next) {
 			if (tmp->so_lport == uh->uh_sport &&
@@ -248,7 +248,7 @@ bad:
 	return;
 }
 
-int udp_output2(struct socket *so, struct mbuf *m, 
+int udp_output2(struct SLIRPsocket *so, struct mbuf *m, 
                 struct sockaddr_in *saddr, struct sockaddr_in *daddr,
                 int iptos)
 {
@@ -303,7 +303,7 @@ int udp_output2(struct socket *so, struct mbuf *m,
 	return (error);
 }
 
-int udp_output(struct socket *so, struct mbuf *m, 
+int udp_output(struct SLIRPsocket *so, struct mbuf *m, 
                struct sockaddr_in *addr)
 
 {
@@ -323,7 +323,7 @@ int udp_output(struct socket *so, struct mbuf *m,
 
 int
 udp_attach(so)
-     struct socket *so;
+     struct SLIRPsocket *so;
 {
   struct sockaddr_in addr;
 	
@@ -357,7 +357,7 @@ udp_attach(so)
 
 void
 udp_detach(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	closesocket(so->s);
 	/* if (so->so_m) m_free(so->so_m);    done by sofree */
@@ -375,7 +375,7 @@ struct tos_t udptos[] = {
 
 u_int8_t
 udp_tos(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	int i = 0;
 	
@@ -400,7 +400,7 @@ udp_tos(so)
  */
 void
 udp_emu(so, m)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct mbuf *m;
 {
 	struct sockaddr_in addr;
@@ -413,8 +413,8 @@ udp_emu(so, m)
 	
 struct talk_request {
 	struct talk_request *next;
-	struct socket *udp_so;
-	struct socket *tcp_so;
+	struct SLIRPsocket *udp_so;
+	struct SLIRPsocket *tcp_so;
 } *req;
 	
 	static struct talk_request *req_tbl = 0;	
@@ -626,7 +626,7 @@ struct cu_header {
 	}
 }
 
-struct socket *
+struct SLIRPsocket *
 udp_listen(port, laddr, lport, flags)
 	u_int port;
 	u_int32_t laddr;
@@ -634,7 +634,7 @@ udp_listen(port, laddr, lport, flags)
 	int flags;
 {
 	struct sockaddr_in addr;
-	struct socket *so;
+	struct SLIRPsocket *so;
 	socklen_t addrlen = sizeof(struct sockaddr_in);
 	int opt = 1;
 	

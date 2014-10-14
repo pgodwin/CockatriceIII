@@ -201,3 +201,18 @@ int32 timer_host2mac_time(tm_time_t hosttime)
 			return -t;			// Time in negative microseconds
 	}
 }
+
+
+#if 0
+// Let's sleep!
+
+void idle_wait(void)
+{
+
+	// Fallback: sleep 10 ms
+	//Delay_usec(10000);
+	usleep(10);
+
+}
+#endif
+

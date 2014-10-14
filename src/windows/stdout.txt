@@ -1,3 +1,0 @@
-Basilisk II V0.8 by Christian Bauer et al.
-Reading ROM file...
-SDL_Audio inited 16bit, 44100Hz, 2 channels

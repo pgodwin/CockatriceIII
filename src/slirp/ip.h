@@ -69,6 +69,10 @@ typedef u_int32_t n_long;                 /* long as received from the net */
  */
 #define	IPVERSION	4
 
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
+#endif
+
 /*
  * Structure of an internet header, naked of options.
  */
@@ -231,6 +235,10 @@ struct ipovly {
 
 #ifdef PRAGMA_PACK_SUPPORTED
 #pragma pack(PACK_END)
+#endif
+
+#if defined(_MSC_VER)
+#pragma pack(pop)
 #endif
 
 /*

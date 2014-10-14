@@ -50,7 +50,7 @@ u_int16_t ip_id;
  */
 int
 ip_output(so, m0)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct mbuf *m0;
 {
 	register struct ip *ip;

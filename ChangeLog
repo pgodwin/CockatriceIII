@@ -1,13 +1,20 @@
+v0.0 (release 0.0-2) - 14.Oct.2014
+	- More mutexes and fixes on slirp.
+	- some improvements in blocking and timings with PCAP
+	- Imported SCSI driver from previous.  Now SCSI disk files work
+
 V0.0 (release 0.0-1) - 09.Oct.2014
 	- pruned the serial interface
 	- told the disk driver to scan for partitions
 	- more fixes for slirp, regarding a mutex around all functions
 	  in sdl_pcap.cpp
+
 V0.0 (release 0.0-0) - 07.Oct.2014
 	- first release showing off preliminary SDL video,sound and input
 	- Also includes libpcap for raw networking (AppleTalk!)
 	- I've also encorporated SLiRP from later Basilisk II
 	- Name Change and new life... welcome to Cockatrice III
+
 V0.8 (release 0.8-1) - 30.Jan.2000
 	- extfs: extended size of finf helper files to 32 bytes to eventually
 	  allow storing the complete FInfo/FXInfo in it

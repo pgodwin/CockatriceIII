@@ -243,11 +243,15 @@ int inet_aton _P((const char *cp, struct in_addr *ia));
 #define PACK_END 0
 #define PACKED__
 #elif _MSC_VER
-#define PRAGMA_PACK_SUPPORTED 1
-#define PACK_END 4
+//#define PRAGMA_PACK_SUPPORTED 1
+//#define PACK_END 4
 #define PACKED__
 #else
 #error "Packed attribute or pragma shall be supported"
+#endif
+
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
 #endif
 
 #include "ip.h"
@@ -341,7 +345,7 @@ int cksum(struct mbuf *m, int len);
 
 /* if.c */
 void if_init _P((void));
-void if_output _P((struct socket *, struct mbuf *));
+void if_output _P((struct SLIRPsocket *, struct mbuf *));
 
 /* ip_input.c */
 void ip_init _P((void));
@@ -354,11 +358,11 @@ void ip_slowtimo _P((void));
 void ip_stripoptions _P((register struct mbuf *, struct mbuf *));
 
 /* ip_output.c */
-int ip_output _P((struct socket *, struct mbuf *));
+int ip_output _P((struct SLIRPsocket *, struct mbuf *));
 
 /* tcp_input.c */
 int tcp_reass _P((register struct tcpcb *, register struct tcpiphdr *, struct mbuf *));
-void tcp_input _P((register struct mbuf *, int, struct socket *));
+void tcp_input _P((register struct mbuf *, int, struct SLIRPsocket *));
 void tcp_dooptions _P((struct tcpcb *, u_char *, int, struct tcpiphdr *));
 void tcp_xmit_timer _P((register struct tcpcb *, int));
 int tcp_mss _P((register struct tcpcb *, u_int));
@@ -371,17 +375,22 @@ void tcp_setpersist _P((register struct tcpcb *));
 void tcp_init _P((void));
 void tcp_template _P((struct tcpcb *));
 void tcp_respond _P((struct tcpcb *, register struct tcpiphdr *, register struct mbuf *, tcp_seq, tcp_seq, int));
-struct tcpcb * tcp_newtcpcb _P((struct socket *));
+struct tcpcb * tcp_newtcpcb _P((struct SLIRPsocket *));
 struct tcpcb * tcp_close _P((register struct tcpcb *));
 void tcp_drain _P((void));
 void tcp_sockclosed _P((struct tcpcb *));
-int tcp_fconnect _P((struct socket *));
-void tcp_connect _P((struct socket *));
-int tcp_attach _P((struct socket *));
-u_int8_t tcp_tos _P((struct socket *));
-int tcp_emu _P((struct socket *, struct mbuf *));
-int tcp_ctl _P((struct socket *));
+int tcp_fconnect _P((struct SLIRPsocket *));
+void tcp_connect _P((struct SLIRPsocket *));
+int tcp_attach _P((struct SLIRPsocket *));
+u_int8_t tcp_tos _P((struct SLIRPsocket *));
+int tcp_emu _P((struct SLIRPsocket *, struct mbuf *));
+int tcp_ctl _P((struct SLIRPsocket *));
 struct tcpcb *tcp_drop(struct tcpcb *tp, int err);
+
+
+#if defined(_MSC_VER)
+#pragma pack(pop)
+#endif
 
 #ifdef USE_PPP
 #define MIN_MRU MINMRU

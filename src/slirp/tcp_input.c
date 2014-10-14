@@ -42,10 +42,10 @@
 #include <slirp.h>
 #include "ip_icmp.h"
 
-struct socket tcb;
+struct SLIRPsocket tcb;
 
 int	tcprexmtthresh = 3;
-struct	socket *tcp_last_so = &tcb;
+struct	SLIRPsocket *tcp_last_so = &tcb;
 
 tcp_seq tcp_iss;                /* tcp initial send seq # */
 
@@ -117,7 +117,7 @@ tcp_reass(tp, ti, m)
 	struct mbuf *m;
 {
 	register struct tcpiphdr *q;
-	struct socket *so = tp->t_socket;
+	struct SLIRPsocket *so = tp->t_socket;
 	int flags;
 	
 	/*
@@ -233,7 +233,7 @@ void
 tcp_input(m, iphlen, inso)
 	register struct mbuf *m;
 	int iphlen;
-	struct socket *inso;
+	struct SLIRPsocket *inso;
 {
   	struct ip save_ip, *ip;
 	register struct tcpiphdr *ti;
@@ -242,7 +242,7 @@ tcp_input(m, iphlen, inso)
 	int len, tlen, off;
 	register struct tcpcb *tp = 0;
 	register int tiflags;
-	struct socket *so = 0;
+	struct SLIRPsocket *so = 0;
 	int todrop, acked, ourfinisacked, needoutput = 0;
 /*	int dropsocket = 0; */
 	int iss = 0;
@@ -1570,7 +1570,7 @@ tcp_dooptions(tp, cp, cnt, ti)
 
 void
 tcp_pulloutofband(so, ti, m)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct tcpiphdr *ti;
 	register struct mbuf *m;
 {
@@ -1697,7 +1697,7 @@ tcp_mss(tp, offer)
         register struct tcpcb *tp;
         u_int offer;
 {
-	struct socket *so = tp->t_socket;
+	struct SLIRPsocket *so = tp->t_socket;
 	int mss;
 	
 	DEBUG_CALL("tcp_mss");

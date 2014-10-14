@@ -74,7 +74,7 @@ sbreserve(sb, size)
  */
 void
 sbappend(so, m)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct mbuf *m;
 {
 	int ret = 0;

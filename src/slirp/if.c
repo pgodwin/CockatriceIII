@@ -158,7 +158,7 @@ if_input(ttyp)
  */
 void
 if_output(so, ifm)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct mbuf *ifm;
 {
 	struct mbuf *ifq;

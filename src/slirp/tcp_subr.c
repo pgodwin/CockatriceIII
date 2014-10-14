@@ -78,7 +78,7 @@ void
 tcp_template(tp)
 	struct tcpcb *tp;
 {
-	struct socket *so = tp->t_socket;
+	struct SLIRPsocket *so = tp->t_socket;
 	register struct tcpiphdr *n = &tp->t_template;
 
 	n->ti_next = n->ti_prev = 0;
@@ -185,7 +185,7 @@ tcp_respond(tp, ti, m, ack, seq, flags)
 	else 
 	  ((struct ip *)ti)->ip_ttl = ip_defttl;
 	
-	(void) ip_output((struct socket *)0, m);
+	(void) ip_output((struct SLIRPsocket *)0, m);
 }
 
 /*
@@ -195,7 +195,7 @@ tcp_respond(tp, ti, m, ack, seq, flags)
  */
 struct tcpcb *
 tcp_newtcpcb(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	register struct tcpcb *tp;
 	
@@ -273,7 +273,7 @@ tcp_close(tp)
 	register struct tcpcb *tp;
 {
 	register struct tcpiphdr *t;
-	struct socket *so = tp->t_socket;
+	struct SLIRPsocket *so = tp->t_socket;
 	register struct mbuf *m;
 
 	DEBUG_CALL("tcp_close");
@@ -390,7 +390,7 @@ tcp_sockclosed(tp)
  * not wait for ACK+SYN.
  */
 int tcp_fconnect(so)
-     struct socket *so;
+     struct SLIRPsocket *so;
 {
   int ret=0;
   
@@ -454,9 +454,9 @@ int tcp_fconnect(so)
  */ 
 void
 tcp_connect(inso)
-	struct socket *inso;
+	struct SLIRPsocket *inso;
 {
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct sockaddr_in addr;
 	socklen_t addrlen = sizeof(struct sockaddr_in);
 	struct tcpcb *tp;
@@ -541,7 +541,7 @@ tcp_connect(inso)
  */
 int
 tcp_attach(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	if ((so->so_tcpcb = tcp_newtcpcb(so)) == NULL)
 	   return -1;
@@ -577,7 +577,7 @@ struct emu_t *tcpemu = 0;
  */
 u_int8_t
 tcp_tos(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	int i = 0;
 	struct emu_t *emup;
@@ -631,7 +631,7 @@ int do_echo = -1;
  */
 int
 tcp_emu(so, m)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	struct mbuf *m;
 {
 	u_int n1, n2, n3, n4, n5, n6;
@@ -653,7 +653,7 @@ tcp_emu(so, m)
 		 */
 		
 		{
-			struct socket *tmpso;
+			struct SLIRPsocket *tmpso;
 			struct sockaddr_in addr;
 			socklen_t addrlen = sizeof(struct sockaddr_in);
 			struct sbuf *so_rcv = &so->so_rcv;
@@ -812,7 +812,7 @@ tcp_emu(so, m)
 			user="";
 			args="";
 			if (so->extra==NULL) {
-				struct socket *ns;
+				struct SLIRPsocket *ns;
 				struct tcpcb* tp;
 				int port=atoi(ptr);
 				if (port <= 0) return 0;
@@ -1247,13 +1247,13 @@ do_prompt:
  */
 int
 tcp_ctl(so)
-	struct socket *so;
+	struct SLIRPsocket *so;
 {
 	struct sbuf *sb = &so->so_snd;
 	int command;
  	struct ex_list *ex_ptr;
 	int do_pty;
-        //	struct socket *tmpso;
+        //	struct SLIRPsocket *tmpso;
 	
 	DEBUG_CALL("tcp_ctl");
 	DEBUG_ARG("so = %lx", (long )so);

@@ -59,6 +59,7 @@ prefs_desc common_prefs_items[] = {
 	{"nocdrom", TYPE_BOOLEAN, false},	// Don't install CD-ROM driver (cdrom.cpp/rom_patches.cpp)
 	{"nosound", TYPE_BOOLEAN, false},	// Don't enable sound output (audio_*.cpp)
 	{"nogui", TYPE_BOOLEAN, false},		// Disable GUI (main_*.cpp)
+	{"idlewait",TYPE_BOOLEAN,true},		// enable idle..
 	{NULL, TYPE_END, false}	// End of list
 };
 
@@ -344,7 +345,7 @@ void LoadPrefsFromStream(FILE *f)
 		if (desc == NULL)
 			desc = find_prefs_desc(keyword, platform_prefs_items);
 		if (desc == NULL) {
-			printf("WARNING: Unknown preferences keyword '%s'\n", keyword);
+			//printf("WARNING: Unknown preferences keyword '%s'\n", keyword);
 			continue;
 		}
 

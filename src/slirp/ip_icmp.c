@@ -113,7 +113,7 @@ icmp_input(m, hlen)
     if (ip->ip_dst.s_addr == alias_addr.s_addr) {
       icmp_reflect(m);
     } else {
-      struct socket *so;
+      struct SLIRPsocket *so;
       struct sockaddr_in addr;
       if ((so = socreate()) == NULL) goto freeit;
       if(udp_attach(so) == -1) {
@@ -308,7 +308,7 @@ icmp_error(msrc, type, code, minsize, message)
   ip->ip_dst = ip->ip_src;    /* ip adresses */
   ip->ip_src = alias_addr;
 
-  (void ) ip_output((struct socket *)NULL, m);
+  (void ) ip_output((struct SLIRPsocket *)NULL, m);
   
   icmpstat.icps_reflect++;
 
@@ -365,7 +365,7 @@ icmp_reflect(m)
     ip->ip_src = icmp_dst;
   }
 
-  (void ) ip_output((struct socket *)NULL, m);
+  (void ) ip_output((struct SLIRPsocket *)NULL, m);
 
   icmpstat.icps_reflect++;
 }

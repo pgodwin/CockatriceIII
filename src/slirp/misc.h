@@ -67,14 +67,14 @@ extern struct emu_t *tcpemu;
 
 extern int x_port, x_server, x_display;
 
-int show_x _P((char *, struct socket *));
+int show_x _P((char *, struct SLIRPsocket *));
 void redir_x _P((u_int32_t, int, int, int));
 void getouraddr _P((void));
 void slirp_insque  _P((void *, void *));
 void slirp_remque  _P((void *));
 int add_exec _P((struct ex_list **, int, char *, int, int));
 int slirp_openpty _P((int *, int *));
-int fork_exec _P((struct socket *, char *, int));
+int fork_exec _P((struct SLIRPsocket *, char *, int));
 void snooze_hup _P((int));
 void snooze _P((void));
 void relay _P((int));
@@ -82,6 +82,6 @@ void add_emu _P((char *));
 void u_sleep _P((int));
 void fd_nonblock _P((int));
 void fd_block _P((int));
-int rsh_exec _P((struct socket *, struct socket *, char *, char *, char *));
+int rsh_exec _P((struct SLIRPsocket *, struct SLIRPsocket *, char *, char *, char *));
 
 #endif

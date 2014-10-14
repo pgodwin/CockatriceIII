@@ -488,6 +488,13 @@ void EmulOp(uint16 opcode, M68kRegisters *r)
 			memmove(Mac2HostAddr(r->a[1]), Mac2HostAddr(r->a[0]), r->d[0]);
 			break;
 
+		case M68K_EMUL_OP_IDLE_TIME:	// SynchIdleTime() patch
+			// Sleep if no events pending
+			if (ReadMacInt32(0x14c) == 0)
+				idle_wait();
+			r->a[0] = ReadMacInt32(0x2b6);
+			break;
+
 		default:
 			printf("FATAL: EMUL_OP called with bogus opcode %08x\n", opcode);
 			printf("d0 %08lx d1 %08lx d2 %08lx d3 %08lx\n"

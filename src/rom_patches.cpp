@@ -285,13 +285,15 @@ static void print_rom_info(void)
 	printf("\nROM Info:\n");
 	printf("Checksum    : %08x\n", ReadMacInt32(ROMBaseMac));
 	printf("Version     : %04x\n", ROMVersion);
-	printf("Sub Version : %04x\n", ReadMacInt16(ROMBaseMac + 18));
+	printf("Sub Version : %04x\n\n", ReadMacInt16(ROMBaseMac + 18));
 	printf("Resource Map: %08x\n", ReadMacInt32(ROMBaseMac + 26));
 	printf("Trap Tables : %08x\n\n", ReadMacInt32(ROMBaseMac + 34));
+#if 1
 	if (ROMVersion == ROM_VERSION_32) {
 		list_rom_resources();
 		list_universal_infos();
 	}
+#endif
 }
 
 
@@ -812,13 +814,12 @@ bool CheckROM(void)
 	// Read version
 	ROMVersion = ntohs(*(uint16 *)(ROMBaseHost + 8));
 
-#if REAL_ADDRESSING
-	// Real addressing mode requires a 32-bit clean ROM
-	return ROMVersion == ROM_VERSION_32;
-#else
 	// Virtual addressing mode works with 32-bit clean Mac II ROMs and Classic ROMs
-	return (ROMVersion == ROM_VERSION_CLASSIC) || (ROMVersion == ROM_VERSION_32);
-#endif
+	//return (ROMVersion == ROM_VERSION_CLASSIC) || (ROMVersion == ROM_VERSION_32);
+	if (ROMVersion == ROM_VERSION_32)
+		return(ROM_VERSION_32);
+	else
+		return (ROM_VERSION_CLASSIC);
 }
 
 
@@ -831,6 +832,7 @@ static bool patch_rom_classic(void)
 {
 	uint16 *wp;
 	uint32 base;
+printf("Patching for a Mac Classic/SE (version $0276)\n");
 
 	// Don't jump into debugger (VIA line)
 	wp = (uint16 *)(ROMBaseHost + 0x1c40);
@@ -896,7 +898,7 @@ static bool patch_rom_classic(void)
 	CDROMIconAddr = ROMBaseMac + sony_offset + 0xa00;
 	memcpy(ROMBaseHost + sony_offset + 0xa00, CDROMIcon, sizeof(CDROMIcon));
 
-	// Install SERD patch and serial drivers
+	// Install SERD patch and serial drivers	
 	serd_offset = 0x31bae;
 	D(bug("serd %08lx\n", serd_offset));
 	wp = (uint16 *)(ROMBaseHost + serd_offset + 12);
@@ -906,6 +908,7 @@ static bool patch_rom_classic(void)
 	memcpy(ROMBaseHost + serd_offset + 0x200, aout_driver, sizeof(aout_driver));
 	memcpy(ROMBaseHost + serd_offset + 0x300, bin_driver, sizeof(bin_driver));
 	memcpy(ROMBaseHost + serd_offset + 0x400, bout_driver, sizeof(bout_driver));
+
 
 	// Replace ADBOp()
 	memcpy(ROMBaseHost + 0x3880, adbop_patch, sizeof(adbop_patch));
@@ -993,6 +996,8 @@ static bool patch_rom_32(void)
 	uint16 *wp;
 	uint8 *bp;
 	uint32 base;
+
+	printf("Patching a 32-bit clean ROM (version $067c or higher)\n");
 
 	// Find UniversalInfo
 	static const uint8 universal_dat[] = {0xdc, 0x00, 0x05, 0x05, 0x3f, 0xff, 0x01, 0x00};
@@ -1436,7 +1441,7 @@ static bool patch_rom_32(void)
 			wp = (uint16 *)(ROMBaseHost + base + 8);
 			*wp = htons(M68K_NOP);
 		}
-
+#if 1
 		// SANE
 		static const uint8 ptest2_dat[] = {0x0c, 0x38, 0x00, 0x04, 0x01, 0x2f, 0x6d, 0x54, 0x48, 0xe7, 0xf8, 0x60};
 		base = find_rom_data(0, ROMSize, ptest2_dat, sizeof(ptest2_dat));
@@ -1449,6 +1454,7 @@ static bool patch_rom_32(void)
 			*wp++ = htons(0x7000);		// moveq	#0,d0
 			*wp = htons(M68K_RTS);
 		}
+#endif
 	}
 
 	// Don't set MemoryDispatch() to unimplemented trap
@@ -1606,6 +1612,7 @@ bool PatchROM(void)
 				return false;
 			break;
 		default:
+			printf("You must have a version 630 or greater ROM (The Macintosh Classic ROM)\n");
 			return false;
 	}
 

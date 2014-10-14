@@ -1,0 +1,82 @@
+Q308669 - FILE: Rescan the SCSI Bus for New Devices 
+
+--------------------------------------------------------------------------------
+The information in this article applies to:
+
+Microsoft Windows 2000 Driver Development Kit (DDK)
+
+--------------------------------------------------------------------------------
+
+
+SUMMARY
+
+The Rescan sample program, which is provided through this article, can be used to enumerate all available SCSI adapters on the system and initiate bus rescan. This will find new devices that have been added to the bus since the previous bus scan.
+
+The sample also obtains a handle to the device to send IOCTL commands to get the adapter properties. The sample also demonstrates enumeration of child devices through two different techniques. The first technique gets the inquiry data for each SCSI adapter and the second uses the CM_xxx APIs. 
+
+
+
+MORE INFORMATION
+
+The following file is available for download from the Microsoft Download Center:
+
+     Rescan1.exe
+
+     Release Date: OCT-17-2001
+
+For additional information about how to download Microsoft Support files, click the article number below to view the article in the Microsoft Knowledge Base: 
+Q119591 How to Obtain Microsoft Support Files from Online Services 
+Microsoft used the most current virus detection software available on the date of posting to scan this file for viruses. Once posted, the file is housed on secure servers that prevent any unauthorized changes to the file. 
+
+The Rescan1.exe file contains the following files: 
+
+
+File           Description
+---------------------------------------------------------------------
+Rescan         Implements the Win32 application to enumerate devices
+Rescan.h       Header file for rescan.c
+Sources        DDK build instructions
+Makefile       Standard Windows 2000 makefile
+Rescan.txt     The documentation for these samples (this article)
+Rescan.exe     Windows 2000 executable program (free build) 
+
+Device Enumeration
+
+This sample uses the Setup class GUID GUID_DEVCLASS_SCSIADAPTER to enumerate all the SCSI adapters installed on the system. It obtains the device properties by getting the registry properties. It then initiates bus rescan and gets child device properties.
+
+To send IOCTLs from a Win32 application, the application should have the handle to the device. The device handle can be obtained by opening the device with the device interface name. The SCSI port driver exposes this interface by registering the device interface. It uses the StoragePortClassGuid Interface GUID for device registration. A Win32 application can obtain this interface name by using the SetupDi APIs with the same Interface GUID. By doing this in a loop, all the registered SCSI adapter interfaces can be obtained. Because these values are obtained from the SCSI port driver, this will work for all types of adapters managed by the SCSI port driver. 
+
+Adapter Properties
+
+IOCTL_STORAGE_QUERY_PROPERTY can be used to get the adapter properties. This IOCTL takes the data structure STORAGE_PROPERTY_QUERY as an argument. Before calling this IOCTL the STORAGE_PROPERTY_ID and STORAGE_QUERY_TYPE member must be set accordingly. The STORAGE_PROPERTY_ID can be set to either StorageAdapterProperty or StorageDeviceProperty. StorageAdapterProperty returns the properties of the adapters and StorageDeviceProperty returns the properties of the devices. This data structure and its member values are defined in \NTddk\Src\NTddstor.h.
+
+This sample obtains the adapter property by using StorageAdapterProperty. This will return the STORAGE_ADAPTER_DESCRIPTOR data structure that contains adapter properties like the bus type, maximum transfer length, and alignment mask.
+ 
+Child Device Properties
+
+This sample uses the IOCTL_SCSI_GET_INQUIRY_DATA IOCTL to get the inquiry data from each bus. It then lists all devices with their SCSI address and device type.
+
+The second technique demonstrated in the sample uses the CM_xxx APIs to get all the child devices of an adapter. It also gets the device instance ID for each child device.
+ 
+Building the Sample
+
+1. Select Free Build Environment or Checked Build Environment under your Development Kits program group to set basic environment variables needed by the build utility.
+
+2. Change to the directory containing the device source code, such as CD C:\Rescan.
+
+3. Run "build -ceZ" or use the macro BLD.
+
+This invokes the Microsoft make routines that produce a log file called Buildxxx.log, as well as Buildxxx.wrn and Buildxxx.err if there are any warnings or errors (where xxx stands for "fre" or "chk" depending on the environment chosen). If the build succeeds, the executable Rescan.exe will be placed in a platform-specific subdirectory of your <target path> directory as specified in the Sources file.
+
+
+Running the Rescan.exe Sample
+
+This sample does not take any arguments, so simply execute it from a command prompt window. It will list each SCSI adapter and its child devices' properties. 
+
+
+REFERENCES
+
+Microsoft Windows Driver Development Kits
+http://www.microsoft.com/ddk/
+
+Additional query words: rescan1 

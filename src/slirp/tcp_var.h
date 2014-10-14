@@ -71,7 +71,7 @@ struct tcpcb {
 /*	struct	tcpiphdr *t_template;	/ * skeletal packet for transmit */
 	struct	tcpiphdr t_template;
 
-	struct	socket *t_socket;		/* back pointer to socket */
+	struct	SLIRPsocket *t_socket;		/* back pointer to socket */
 /*
  * The following fields are used as in the protocol specification.
  * See RFC783, Dec. 1981, page 21.

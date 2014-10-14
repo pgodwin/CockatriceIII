@@ -130,6 +130,9 @@ void slirp_cleanup(void)
 int slirp_init(void)
 {
     //    debug_init("/tmp/slirp.log", DEBUG_DEFAULT);
+#ifdef DEBUG
+	debug_init("slirp.log",DEBUG_DEFAULT);
+#endif
     
 #ifdef _WIN32
     {
@@ -156,6 +159,9 @@ int slirp_init(void)
     inet_aton(CTL_SPECIAL, &special_addr);
 	alias_addr.s_addr = special_addr.s_addr | htonl(CTL_ALIAS);
 	getouraddr();
+#ifdef DEBUG
+	debug_init("slirplog.txt",3);
+#endif
     return 0;
 }
 
@@ -191,7 +197,7 @@ static void updtime(void)
 int slirp_select_fill(int *pnfds, 
 					  fd_set *readfds, fd_set *writefds, fd_set *xfds)
 {
-    struct socket *so, *so_next;
+    struct SLIRPsocket *so, *so_next;
     int nfds;
     int timeout, tmp_time;
 
@@ -213,14 +219,17 @@ int slirp_select_fill(int *pnfds,
 		do_slowtimo = ((tcb.so_next != &tcb) ||
 			       ((struct ipasfrag *)&ipq != (struct ipasfrag *)ipq.next));
 		
-		for (so = tcb.so_next; so != &tcb; so = so_next) {
+		for (so = tcb.so_next; (so != &tcb); so = so_next) {
 			so_next = so->so_next;
-			
+
+
 			/*
 			 * See if we need a tcp_fasttimo
 			 */
+			if(&so->so_tcpcb->t_flags!=0x0){		//This is to prevent a common lockup.
 			if (time_fasttimo == 0 && so->so_tcpcb->t_flags & TF_DELACK)
-			   time_fasttimo = curtime; /* Flag when we want a fasttimo */
+				time_fasttimo = curtime; }/* Flag when we want a fasttimo */
+			
 			
 			/*
 			 * NOFDREF can include still connecting to local-host,
@@ -346,7 +355,7 @@ int slirp_select_fill(int *pnfds,
 
 void slirp_select_poll(fd_set *readfds, fd_set *writefds, fd_set *xfds)
 {
-    struct socket *so, *so_next;
+    struct SLIRPsocket *so, *so_next;
     int ret;
 
     global_readfds = readfds;

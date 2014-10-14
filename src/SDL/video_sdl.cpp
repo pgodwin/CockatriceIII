@@ -22,6 +22,7 @@ static int keycode_table[256];		// X keycode -> Mac keycode translation table
 
 // Global variables
 static int32 frame_skip;
+static int32 skip_count=0;
 static int32 quitcount=0;
 int depth;	//how deep is the display
 // Prefs items
@@ -39,6 +40,7 @@ static bool emul_suspended = false;					// Flag: Emulator suspended
 static uint8 *the_buffer;                                                       // Mac frame buffer
 static bool redraw_thread_active = false;                       // Flag: Redraw thread installed
 static volatile bool redraw_thread_cancel = false;      // Flag: Cancel Redraw thread
+static bool classic_mode = false;					// Flag: Classic Mac video mode
 //static pthread_t redraw_thread;                                         // Redraw thread
 //prototypes
 
@@ -56,6 +58,7 @@ static bool is_ctrl_down(SDL_keysym const & ks);
 
 ////////////////////////////////////////
 
+
 void video_set_palette(uint8 *pal)
 {
         int r, g, b;
@@ -68,31 +71,13 @@ void video_set_palette(uint8 *pal)
         ncolors = 256;
         colors  = (SDL_Color *)malloc(ncolors*sizeof(SDL_Color));
 
-        /* Set a 3,3,2 color cube */
-/*
-        for ( r=0; r<8; ++r ) {
-            for ( g=0; g<8; ++g ) {
-                for ( b=0; b<4; ++b ) {
-                    i = ((r<<5)|(g<<2)|b);
-                    colors[i].r = r<<5;
-                    colors[i].g = g<<5;
-                    colors[i].b = b<<6;
-                }
-            }
-        }
-*/
         for (int i=0; i<256; i++) {
                 colors[i].r = pal[i*3] * 0x0101;
                 colors[i].g = pal[i*3+1] * 0x0101;
                 colors[i].b = pal[i*3+2] * 0x0101;
         }
 
-        /* Note: A better way of allocating the palette might be
-           to calculate the frequency of colors in the image
-           and create a palette based on that information.
-        */
-    /* Set colormap, try for all the colors, but don't worry about it */
-    SDL_SetColors(SDLscreen, colors, 0, ncolors);
+SDL_SetColors(SDLscreen, colors, 0, ncolors);
 }
 
 bool VideoInit(bool classic)
@@ -104,20 +89,20 @@ const char *mode_str;
                 mode_str = PrefsFindString("screen");
 
 
+classic_mode = classic;
 D(bug(" VideoInit %d\n",classic));
 if (classic)
 	depth =1;
 else depth=8;
         int width = 512, height = 384;
-        //display_type = DISPLAY_WINDOW;
+
         if (mode_str) {
                 if (sscanf(mode_str, "win/%d/%d", &width, &height) == 2)
-                        //display_type = DISPLAY_WINDOW;
 	sscanf(mode_str,"win/%d/%d",&width,&height);
 	}
 	if(!init_window(width,height))
 		return false;
-#if !REAL_ADDRESSING
+
         // Set variables for UAE memory mapping
         MacFrameBaseHost = the_buffer;
         MacFrameSize = VideoMonitor.bytes_per_row * VideoMonitor.y;
@@ -125,19 +110,15 @@ else depth=8;
         // No special frame buffer in Classic mode (frame buffer is in Mac RAM)
         if (classic)
                 MacFrameLayout = FLAYOUT_NONE;
-#endif
 
-/*        redraw_thread_active = (pthread_create(&redraw_thread, NULL, redraw_func, NULL) == 0);
-        if (!redraw_thread_active)
-                printf("FATAL: cannot create redraw thread\n");
-        return redraw_thread_active;
-*/
+
 return true;
 }
 
 // Init window mode
 static bool init_window(int width, int height)
 {
+	int flags;
 D(bug(" init_window w%d,h%d d%d\n",width,height,depth));
         // Set absolute mouse mode
         ADBSetRelMouseMode(false);
@@ -147,7 +128,6 @@ D(bug(" init_window w%d,h%d d%d\n",width,height,depth));
         if (frame_skip == 0)
                 frame_skip = 1;
 //SDL
-        int flags;
         if(SDL_Init(SDL_INIT_VIDEO)<0)
                 exit(0);
         flags=(SDL_SWSURFACE|SDL_HWPALETTE);
@@ -176,13 +156,8 @@ D(bug(" init_window w%d,h%d d%d\n",width,height,depth));
 
 set_video_monitor(width, height, bytes_per_row);//img->bytes_per_line);
 
-#if REAL_ADDRESSING
-        VideoMonitor.mac_frame_base = (uint32)the_buffer;
-        MacFrameLayout = FLAYOUT_DIRECT;
-#else
         VideoMonitor.mac_frame_base = MacFrameBaseMac;
-#endif
-        return true;
+  return true;
 }
 
 
@@ -217,11 +192,7 @@ void set_video_monitor(int width, int height, int bytes_per_row)
         VideoMonitor.x = width;
         VideoMonitor.y = height;
         VideoMonitor.bytes_per_row = bytes_per_row;
-        //if (native_byte_order)
-        //        MacFrameLayout = layout;
-        //else
-                MacFrameLayout = FLAYOUT_DIRECT;
-
+        MacFrameLayout = FLAYOUT_DIRECT;
 }
 
 
@@ -230,8 +201,14 @@ void VideoExit(void)
 
 void VideoInterrupt(void)
 {
-memcpy(SDLscreen->pixels,the_buffer,VideoMonitor.bytes_per_row*VideoMonitor.y);
-SDL_UpdateRect(SDLscreen,0,0,0,0);
+if(skip_count++>frame_skip){
+	if(classic_mode)
+		Mac2Host_memcpy(the_buffer, 0x3fa700, VideoMonitor.bytes_per_row * VideoMonitor.y);
+	else
+		memcpy(SDLscreen->pixels,the_buffer,VideoMonitor.bytes_per_row*VideoMonitor.y);
+	SDL_UpdateRect(SDLscreen,0,0,0,0);
+	skip_count=0;
+		}
 doevents();
 }
 
@@ -329,8 +306,8 @@ int emul_suspended=0;
 		quitcount++;
 		ADBKeyDown(0x7f);	// Power key
 		ADBKeyUp(0x7f);
-		if(quitcount>5)
-			exit(0);	//this should be the nice shutdown
+		if(quitcount>2)
+			QuitEmulator();	//this should be the nice shutdown
 	break;
 
 	default:

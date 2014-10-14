@@ -183,7 +183,7 @@ int16 VideoDriverControl(uint32 pb, uint32 dce)
 			return noErr;
 
 		default:
-			printf("WARNING: Unknown VideoDriverControl(%d)\n", code);
+			//printf("WARNING: Unknown VideoDriverControl(%d)\n", code);
 			return controlErr;
 	}
 }
@@ -255,7 +255,7 @@ int16 VideoDriverStatus(uint32 pb, uint32 dce)
 			return noErr;
 
 		default:
-			D(bug("WARNING: Unknown VideoDriverStatus(%d)\n", code));
+			//D(bug("WARNING: Unknown VideoDriverStatus(%d)\n", code));
 			return statusErr;
 	}
 }

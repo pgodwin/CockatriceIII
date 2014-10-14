@@ -36,7 +36,7 @@
 #define UDP_TTL 0x60
 #define UDP_UDPDATALEN 16192
 
-extern struct socket *udp_last_so;
+extern struct SLIRPsocket *udp_last_so;
 
 /*
  * Udp protocol header.
@@ -97,18 +97,18 @@ struct udpstat {
 #define UDPCTL_MAXID            2
 
 extern struct udpstat udpstat;
-extern struct socket udb;
+extern struct SLIRPsocket udb;
 struct mbuf;
 
 void udp_init _P((void));
 void udp_input _P((register struct mbuf *, int));
-int udp_output _P((struct socket *, struct mbuf *, struct sockaddr_in *));
-int udp_attach _P((struct socket *));
-void udp_detach _P((struct socket *));
-u_int8_t udp_tos _P((struct socket *));
-void udp_emu _P((struct socket *, struct mbuf *));
-struct socket * udp_listen _P((u_int, u_int32_t, u_int, int));
-int udp_output2(struct socket *so, struct mbuf *m, 
+int udp_output _P((struct SLIRPsocket *, struct mbuf *, struct sockaddr_in *));
+int udp_attach _P((struct SLIRPsocket *));
+void udp_detach _P((struct SLIRPsocket *));
+u_int8_t udp_tos _P((struct SLIRPsocket *));
+void udp_emu _P((struct SLIRPsocket *, struct mbuf *));
+struct SLIRPsocket * udp_listen _P((u_int, u_int32_t, u_int, int));
+int udp_output2(struct SLIRPsocket *so, struct mbuf *m, 
                 struct sockaddr_in *saddr, struct sockaddr_in *daddr,
                 int iptos);
 #endif

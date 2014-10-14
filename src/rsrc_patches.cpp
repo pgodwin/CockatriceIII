@@ -27,6 +27,7 @@
 #include "audio.h"
 #include "audio_defs.h"
 #include "rsrc_patches.h"
+#include "prefs.h"
 
 #if ENABLE_MON
 #include "mon.h"
@@ -59,6 +60,33 @@ static uint32 find_rsrc_data(const uint8 *rsrc, uint32 max, const uint8 *search,
 }
 
 
+
+/*
+ *  Install SynchIdleTime() patch
+ */
+
+static void patch_idle_time(uint8 *p, uint32 size, int n = 1)
+{
+	if (!PrefsFindBool("idlewait"))
+		return;
+
+	static const uint8 dat[] = {0x70, 0x03, 0xa0, 0x9f};
+	uint32 base = find_rsrc_data(p, size, dat, sizeof(dat));
+	if (base) {
+		uint8 *pbase = p + base - 0x80;
+		static const uint8 dat2[] = {0x20, 0x78, 0x02, 0xb6, 0x41, 0xe8, 0x00, 0x80};
+		base = find_rsrc_data(pbase, 0x80, dat2, sizeof(dat2));
+		if (base) {
+			uint16 *p16 = (uint16 *)(pbase + base);
+			*p16++ = htons(M68K_EMUL_OP_IDLE_TIME);
+			*p16 = htons(M68K_NOP);
+			FlushCodeCache(pbase + base, 4);
+			D(bug("  patch %d applied\n", n));
+		}
+	}
+}
+
+
 /*
  *  Resource patches via vCheckLoad
  */
@@ -81,6 +109,7 @@ void CheckLoad(uint32 type, int16 id, uint8 *p, uint32 size)
 			FlushCodeCache(p + base + 6, 2);
 			D(bug("  patch 1 applied\n"));
 		}
+
 
 #if !ROM_IS_WRITE_PROTECTED
 		// Set fake handle at 0x0000 to some safe place (so broken Mac programs won't write into Mac ROM) (7.5, 8.0)
@@ -467,6 +496,9 @@ void CheckLoad(uint32 type, int16 id, uint8 *p, uint32 size)
 			D(bug("  patch 1 applied\n"));
 		}
 
+		// Patch SynchIdleTime()
+		patch_idle_time(p, size, 2);
+
 	} else if (type == 'lpch' && id == 24) {
 		D(bug(" lpch 24 found\n"));
 
@@ -508,6 +540,9 @@ void CheckLoad(uint32 type, int16 id, uint8 *p, uint32 size)
 			FlushCodeCache(p + base, 6);
 			D(bug("  patch 2 applied\n"));
 		}
+
+		// Patch SynchIdleTime()
+		patch_idle_time(p, size, 3);
 
 #if !EMULATED_68K
 	} else if (CPUIs68060 && type == 'scod' && (id == -16463 || id == -16464)) {

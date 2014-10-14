@@ -207,7 +207,7 @@ ip_input(m)
 	ipstat.ips_delivered++;
 	switch (ip->ip_p) {
 	 case IPPROTO_TCP:
-		tcp_input(m, hlen, (struct socket *)NULL);
+		tcp_input(m, hlen, (struct SLIRPsocket *)NULL);
 		break;
 	 case IPPROTO_UDP:
 		udp_input(m, hlen);

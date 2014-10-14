@@ -58,6 +58,7 @@ static char* lib_name = "wpcap.dll";
 #elif __APPLE__
 static void *hLib = 0;                      /* handle to Library */
 static char* lib_name = "/usr/lib/libpcap.A.dylib";
+#define __cdecl
 #elif __linux
 static void *hLib = 0;                      /* handle to Library */
 static char* lib_name = "libpcap.so";
@@ -69,12 +70,17 @@ typedef int (__cdecl * PCAP_SENDPACKET)(pcap_t* handle, const u_char* msg, int l
 typedef int (__cdecl * PCAP_SETNONBLOCK)(pcap_t *, int, char *);
 typedef const u_char*(__cdecl *PCAP_NEXT)(pcap_t *, struct pcap_pkthdr *);
 typedef const char*(__cdecl *PCAP_LIB_VERSION)(void);
+typedef void (__cdecl *PCAP_CLOSE)(pcap_t *);
+typedef int  (__cdecl *PCAP_GETNONBLOCK)(pcap_t *p, char *errbuf);
+
 
 PCAP_LIB_VERSION 	_pcap_lib_version;
 PCAP_OPEN_LIVE		_pcap_open_live;
 PCAP_SENDPACKET		_pcap_sendpacket;
 PCAP_SETNONBLOCK	_pcap_setnonblock;
 PCAP_NEXT		_pcap_next;
+PCAP_CLOSE		_pcap_close;
+PCAP_GETNONBLOCK	_pcap_getnonblock;
 
 /****************/
 
@@ -114,10 +120,10 @@ queueADT	slirpq;
 int slirp_inited=0;
 /*
 static SDL_sem *slirp_sem = NULL;
-static SDL_mutex *slirp_select_fill_mutex = NULL;
-static SDL_mutex *slirp_select_poll_mutex = NULL;
 static SDL_mutex *slirp_packet_xfer = NULL;
 */
+static SDL_mutex *slirp_select_fill_mutex = NULL;
+static SDL_mutex *slirp_select_poll_mutex = NULL;
 static SDL_mutex *slirp_queue_mutex = NULL;
 static SDL_mutex *slirp_mutex = NULL;
 
@@ -147,9 +153,6 @@ static NetProtocol *prot_list = NULL;
 
 
 // Global variables
-//static int fd = -1;							// fd of sheep_net device
-//static pthread_t ether_thread;				// Packet reception thread
-//static pthread_attr_t ether_thread_attr;	// Packet reception thread attributes
 
 static bool thread_active = false;			// Flag: Packet reception thread installed
 //static sem_t int_ack;						// Interrupt acknowledge semaphore
@@ -212,7 +215,7 @@ void EtherInit(void)
 
 	// Do nothing if no Ethernet device specified
 	const char *name = PrefsFindString("ether");
-	printf("EtherInit with %s\n",name);
+
 	if (name == NULL)
 		return;
 
@@ -223,14 +226,17 @@ void EtherInit(void)
 	is_slirp = (strncmp(name, "slirp", 5) == 0);
 	if(!(is_ethertap || is_slirp))
 		is_pcap=1;
-	//printf("one or the other %d %d %d!?\n",is_ethertap,is_slirp,is_pcap);
-	printf("Using %s%s%s",is_ethertap?"ethertap(not implimented)\n":"",is_slirp ? "SLiRP\n":"",is_pcap ? "PCAP":"");
+
+	if(is_ethertap)
+		return;	//This is missing
+	printf("EtherInit with [%s%s%s]\n",is_ethertap?"ethertap(not implimented)":"",is_slirp ? "SLiRP":"",is_pcap ? "PCAP":"");
 
 	// Open sheep_net or ethertap device
 	char dev_name[16];
 	char errbuf[PCAP_ERRBUF_SIZE];
 	if (is_pcap)
 		{
+		int rc;
 		memset(errbuf,0,sizeof(errbuf));
 #ifdef WIN32
 		 hLib = LoadLibraryA(lib_name);
@@ -241,6 +247,8 @@ void EtherInit(void)
 		_pcap_sendpacket=(PCAP_SENDPACKET)GetProcAddress(hLib,"pcap_sendpacket");		
 		_pcap_setnonblock=(PCAP_SETNONBLOCK)GetProcAddress(hLib,"pcap_setnonblock");	
 		_pcap_next=(PCAP_NEXT)GetProcAddress(hLib,"pcap_next");		
+		_pcap_close=(PCAP_CLOSE)GetProcAddress(hLib,"pcap_close");
+		_pcap_getnonblock=(PCAP_GETNONBLOCK)GetProcAddress(hLib,"pcap_getnonblock");
 #else
 		hLib =  hLib = dlopen(lib_name, RTLD_NOW);
                         if(hLib==0)
@@ -249,19 +257,45 @@ void EtherInit(void)
                 _pcap_sendpacket=(PCAP_SENDPACKET)dlsym(hLib,"pcap_sendpacket");
                 _pcap_setnonblock=(PCAP_SETNONBLOCK)dlsym(hLib,"pcap_setnonblock");
                 _pcap_next=(PCAP_NEXT)dlsym(hLib,"pcap_next");
+                _pcap_close=(PCAP_CLOSE)dlsym(hLib,"pcap_close");
 		_pcap_lib_version =(PCAP_LIB_VERSION)dlsym(hLib,"pcap_lib_version");
+		_pcap_getnonblock=(PCAP_GETNONBLOCK)dlsym(hLib,"pcap_getnonblock");
 #endif
-		if(_pcap_lib_version && _pcap_open_live && _pcap_sendpacket && _pcap_setnonblock && _pcap_next)
+		if(_pcap_lib_version && _pcap_open_live && _pcap_sendpacket && _pcap_setnonblock && _pcap_next && _pcap_close && _pcap_getnonblock)
 			{
 			printf(" version [%s]\n",_pcap_lib_version());
-		if((pcap=_pcap_open_live(name,1518,1,0,errbuf))==0)
+		//pcap_t *pcap_open_live(char *device, int snaplen, int promisc, int to_ms,char *ebuf)
+		//if((pcap=_pcap_open_live(name,1518,1,0,errbuf))==0)
+		if((pcap=_pcap_open_live(name,1518,0,0,errbuf))==0)		//SIMH uses 15 in nonblocking mode.
 			{printf("ethernet.c: pcap_open_live error on %s!\n",name);exit(-1);}
 			}
 		else	{	
-		printf("%d %d %d %d %d %d\n",_pcap_lib_version, _pcap_open_live,_pcap_sendpacket,_pcap_setnonblock,_pcap_next);
+		printf("%d %d %d %d %d %d %d %d\n",_pcap_lib_version, _pcap_open_live,_pcap_sendpacket,_pcap_setnonblock,_pcap_next,_pcap_close,_pcap_getnonblock);
 			is_pcap=0;
 			}
-		}
+
+		//Let's check pcap, and set it to non-blocking if it isn't already.
+		rc=_pcap_getnonblock(pcap,errbuf);
+
+		if(rc==0)	//it's in blocking mode
+			{
+			printf("Setting interface to non-blocking mode..");
+			rc=_pcap_setnonblock(pcap,1,errbuf);
+			if(rc>0)
+				{printf("Error going into non-blocking.\n[%s]\n", errbuf);
+				exit(-1);}
+			printf("..");
+			rc=_pcap_getnonblock(pcap,errbuf);
+				if(rc)
+				printf("..Done!\n");
+				else
+				{
+				printf("This shouldn't happen..\t%d[%s]\n",rc, errbuf);
+				exit(0);
+				}
+			}
+		}	//end of pcap initalization.
+
 	if (is_slirp)
 		{
 		int rc;
@@ -269,21 +303,11 @@ void EtherInit(void)
 		slirpq = QueueCreate();
 		slirp_queue_mutex = SDL_CreateMutex();
 		slirp_mutex=SDL_CreateMutex();
+		slirp_select_fill_mutex=SDL_CreateMutex();
+		slirp_select_poll_mutex=SDL_CreateMutex();
 		slirp_inited=1;
 		}
 
-
-	// Set nonblocking I/O
-	//ioctl(fd, FIONBIO, &nonblock);
-	// Set nonblocking I/O
-	if(is_pcap)
-	{int rc;
-		//if (_pcap_setnonblock(pcap,1,errbuf))
-		rc=_pcap_setnonblock(pcap,1,errbuf);
-		if(rc>0)
-			{printf("Error going into nonblocking.\n[%s]\n", errbuf);
-			exit(-1);}
-	}
 
 	// Get Ethernet address
 	if (!is_ethertap) {
@@ -327,23 +351,25 @@ open_error:
 
 void EtherExit(void)
 {
+printf("EtherExit called\n");
 	// Stop reception thread
 	if (thread_active) {
 		//pthread_cancel(ether_thread);
 		//pthread_join(ether_thread, NULL);
 		//sem_destroy(&int_ack);
-		//SDL_KillThread(receive_func);
+		SDL_KillThread((SDL_Thread*)receive_func);
 		SDL_DestroySemaphore(int_ack);
 		thread_active = false;
 		//DO NICE SHUTDOWN STUFF...
 		if(is_slirp)
-			{}
+			{slirp_exit(0);}
 		if(is_pcap)
-			{}
+			{_pcap_close(pcap);}
 	}
 
 	// Remove all protocols
 	remove_all_protocols();
+printf("Removed all protocols\n");
 }
 
 
@@ -433,6 +459,7 @@ int16 ether_detach_ph(uint16 type)
 
 int16 ether_write(uint32 wds)
 {
+	int rc;
 	// Set source address
 	uint32 hdr = ReadMacInt32(wds + 2);
 	Host2Mac_memcpy(hdr + 6, ether_addr, 6);
@@ -461,9 +488,11 @@ int16 ether_write(uint32 wds)
 
 	// Transmit packet
 	if(is_slirp){
+		//printf("s");
 		SDL_LockMutex(slirp_mutex);
 		slirp_input(packet,len);
 		SDL_UnlockMutex(slirp_mutex);
+		//printf("S");
 		return noErr;}
 	if(is_pcap)
         if (_pcap_sendpacket(pcap, packet, len) < 0) {
@@ -471,6 +500,7 @@ int16 ether_write(uint32 wds)
                 return excessCollsns;
 	} else
 		return noErr;
+return noErr;
 }
 
 
@@ -478,7 +508,6 @@ int16 ether_write(uint32 wds)
  *  Packet reception thread
  */
 
-static int select_jitter=0;
 int receive_func(void *arg)
 {
 	struct queuepacket *p;
@@ -487,27 +516,22 @@ int receive_func(void *arg)
 	if(is_slirp){
 	//slirp poll moved to slirp_tic which is called by the 60Hz
 	//thread
-	//Does this need to lock...?
+
 	if(QueuePeek(slirpq)>0)
 		{
 		SDL_LockMutex(slirp_queue_mutex);
 		p=QueueDelete(slirpq);
 		SDL_UnlockMutex(slirp_queue_mutex);
 		D(bug("inQ:%d  got a %dbyte packet @%d\n",QueuePeek(slirpq),p->len,p));
-//I dont think I need to sanity check anymore, since I wrapped the Queue
-//in a mutex.
-//		if((p->len>1514)||(p->len<40))
-//			{}
-//		else	{
-			h.caplen=p->len;
-			data=p->data;
-//			}
+		h.caplen=p->len;
+		data=p->data;
 		}
 	}//end slirp
 
 	if(is_pcap)
 		{
 		data=_pcap_next(pcap,&h);
+//printf("pcap_next just got a packet!\t%d long\t\r",h.caplen);
 		}
 	if(h.caplen>0)
 		{
@@ -517,6 +541,7 @@ int receive_func(void *arg)
 			{D(bug("ether: we just saw ourselves\n"));}
 		else
 			{
+//printf("pcap just got a packet!\t%d long\t\r",h.caplen);
 			// Trigger Ethernet interrupt
 			D(bug("%d packet received, triggering Ethernet interrupt\n",h.caplen));
 			SetInterruptFlag(INTFLAG_ETHER);
@@ -529,10 +554,14 @@ int receive_func(void *arg)
 		if(is_slirp)
 			free(p);
 		}	//end of receiving a packet
+#if 1
 #ifdef UNIX
-	usleep(5);
+	if(is_slirp)
+	usleep(1);	//this value feels too magical.
 #else
-	Sleep(5);
+	if(is_slirp)
+	Sleep(1);
+#endif
 #endif
 	}//end for
 return 0;
@@ -637,9 +666,11 @@ void slirp_tic(void)
         FD_ZERO(&rfds);
         FD_ZERO(&wfds);
         FD_ZERO(&xfds);
-	SDL_LockMutex(slirp_mutex);
+	//printf("f");
+	SDL_LockMutex(slirp_select_fill_mutex);
        timeout=slirp_select_fill(&nfds,&rfds,&wfds,&xfds); //this can crash
-	SDL_UnlockMutex(slirp_mutex);
+	SDL_UnlockMutex(slirp_select_fill_mutex);
+	//printf("F");
 
 	if(timeout<0)
 		timeout=500;
@@ -648,9 +679,11 @@ void slirp_tic(void)
 
        ret2 = select(nfds + 1, &rfds, &wfds, &xfds, &tv);
         if(ret2>=0){
-	SDL_LockMutex(slirp_mutex);
+	//printf("p");
+	SDL_LockMutex(slirp_select_poll_mutex);
        slirp_select_poll(&rfds, &wfds, &xfds);
-	SDL_UnlockMutex(slirp_mutex);
+	SDL_UnlockMutex(slirp_select_poll_mutex);
+	//printf("P");
           }
        }//end if slirp inited
 }

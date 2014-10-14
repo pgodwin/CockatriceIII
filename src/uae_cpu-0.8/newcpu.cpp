@@ -122,6 +122,7 @@ static void build_cpufunctbl (void)
 {
     int i;
     unsigned long opcode;
+	printf("\nJASON\nbuild_cpufunctbl for a 680%d0\n",cpu_level);
 	int cpu_level = 0;		// 68000 (default)
 	if (CPUType == 4)
 		cpu_level = 4;		// 68040 with FPU

@@ -1,0 +1,102 @@
+Bugs item #2114469, was opened at 2008-09-16 12:12
+Message generated for change (Comment added) made by ir0nh34d
+You can respond by visiting: 
+https://sourceforge.net/tracker/?func=detail&atid=102435&aid=2114469&group_id=2435
+
+Please note that this message will contain a full copy of the comment thread,
+including the initial issue submission, for this request,
+not just the latest update.
+Category: w32api
+Group: None
+Status: Open
+Resolution: None
+Priority: 5
+Private: No
+Submitted By: Rajendra Divecha (rajdivecha)
+>Assigned to: Chris Sutcliffe (ir0nh34d)
+Summary: BusType returned in IOCTL_STORAGE_QUERY_PROPERTY is invalid
+
+Initial Comment:
+Build setup:
+============
+
+Windows XP Professional Version 2002 SP 2.
+
+I had used MinGW-5.1.4.exe and MSYS-1.0.10.exe for installation. Once the installation was completed, I upgraded win32api and mingwrt to...
+w32api-3.12
+mingwrt-3.15
+
+$ uname -a
+MINGW32_NT-5.1 ICTRDIVECH16281 1.0.10(0.46/3/2) 2004-03-15 07:17 i686 unknown
+
+$ gcc -v
+Reading specs from c:/mingw/bin/../lib/gcc/mingw32/3.4.5/specs
+Configured with: ../gcc-3.4.5-20060117-3/configure --with-gcc --with-gnu-ld --with-gnu-as --host=mingw32 --target=mingw32 --prefix=/mingw --enable-threads --disable-nls --enable-languages=c,c++,f77,ada,objc,java --disable-win32-registry --disable-shared --enable-sjlj-exceptions --enable-libgcj --disable-java-awt --without-x --enable-java-gc=boehm --disable-libgcj-debug --enable-interpreter --enable-hash-synchronization --enable-libstdcxx-debug
+Thread model: win32
+gcc version 3.4.5 (mingw-vista special r3)
+
+$ ld -v
+GNU ld version 2.17.50 20060824
+
+Test setup:
+===========
+Windows Server 2003 Enterprise Edition SP 1
+HBA: Adaptec AIC-7899 Ultra160 PCI SCSI Card
+
+Problem Description:
+====================
+I downloaded a sample program for scaning SCSI devices from http://support.microsoft.com/kb/308669
+
+Made minimal changes...
+1) changed the #include to...
+
+#include <ddk/cfgmgr32.h>   // for SetupDiXxx functions.
+//#include <devioctl.h>
+#include <ddk/ntdddisk.h>
+#include <ddk/ntddscsi.h>
+
+2) Modified lines 382, 424 to use LPCTSTR instead of PCTSTR.
+
+3) Modified lines 456, 472 to use GUID_DEVINTERFACE_STORAGEPORT instead of StoragePortClassGuid
+
+And compiled it using...
+gcc -o rescan.exe rescan.c -luuid -lsetupapi
+
+On executing rescan.exe, I found it failing after the following was printed...
+Adapter Properties
+------------------
+
+This was because adpDesc->BusType had invalid values (0x2FA01 and 0x24A01 on my setup).
+
+If I comment out the line that uses adpDesc->BusType, the program prints valid values for the rest of the fields.
+
+The attached zip file contains the modified source files, executable made on mingw and the original executable that I downloaded from the microsoft's website.
+
+The original executable is renamed to rescan.exe.ori. Executing the original executable prints the correct information. The problem is only with the BusType field.
+
+
+----------------------------------------------------------------------
+
+>Comment By: Chris Sutcliffe (ir0nh34d)
+Date: 2009-11-20 20:01
+
+Message:
+Can you please capture all your changes to the w32api in one file (perhaps
+as a proper patch), so I can see all the required changes?
+
+Thank you.
+
+----------------------------------------------------------------------
+
+Comment By: Rajendra Divecha (rajdivecha)
+Date: 2008-09-16 12:28
+
+Message:
+I modified line 588 to the following and the program works fine.
+DebugPrint( 1, "Bus Type       : %s\n",  
+BusType[(BYTE)adpDesc->BusType]);
+
+----------------------------------------------------------------------
+
+You can respond by visiting: 
+https://sourceforge.net/tracker/?func=detail&atid=102435&aid=2114469&group_id=2435

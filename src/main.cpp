@@ -83,7 +83,7 @@ bool InitAll(void)
 			if (CPUType < 2) CPUType = 2;
 			if (CPUType > 4) CPUType = 4;
 			FPUType = PrefsFindBool("fpu") ? 1 : 0;
-			if (CPUType == 4) FPUType = 1;	// 68040 always with FPU
+			//if (CPUType == 4) FPUType = 1;	// 68040 always with FPU
 			TwentyFourBitAddressing = true;
 			break;
 		case ROM_VERSION_32:
@@ -91,10 +91,11 @@ bool InitAll(void)
 			if (CPUType < 2) CPUType = 2;
 			if (CPUType > 4) CPUType = 4;
 			FPUType = PrefsFindBool("fpu") ? 1 : 0;
-			if (CPUType == 4) FPUType = 1;	// 68040 always with FPU
+			//if (CPUType == 4) FPUType = 1;	// 68040 always with FPU
 			TwentyFourBitAddressing = false;
 			break;
 	}
+	printf("Setting up for a 680%d0, %s and %sbit addressing\n",CPUType,FPUType ? "With FPU":"Without FPU",TwentyFourBitAddressing ? "24":"32");
 	CPUIs68060 = false;
 #endif
 
@@ -137,17 +138,24 @@ bool InitAll(void)
 
 	// Init video
 	if (!VideoInit(ROMVersion == ROM_VERSION_64K || ROMVersion == ROM_VERSION_PLUS || ROMVersion == ROM_VERSION_CLASSIC))
+		{
+		printf("failed to initalize video\n");
 		return false;
+		}
 
 #if EMULATED_68K
 	// Init 680x0 emulation (this also activates the memory system which is needed for PatchROM())
 	if (!Init680x0())
+		{
+		printf("Init680x0 failed to initalize!\n");
 		return false;
+		}
 #endif
 
 	// Install ROM patches
 	if (!PatchROM()) {
 		ErrorAlert(GetString(STR_UNSUPPORTED_ROM_TYPE_ERR));
+		printf("\nError in PatchROM()\n");
 		return false;
 	}
 

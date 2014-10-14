@@ -67,7 +67,7 @@ int
 tcp_output(tp)
 	register struct tcpcb *tp;
 {
-	register struct socket *so = tp->t_socket;
+	register struct SLIRPsocket *so = tp->t_socket;
 	register long len, win;
 	int off, flags, error;
 	register struct mbuf *m;

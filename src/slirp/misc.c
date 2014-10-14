@@ -20,7 +20,7 @@ int x_screen = 0;
 int
 show_x(buff, inso)
 	char *buff;
-	struct socket *inso;
+	struct SLIRPsocket *inso;
 {
 	if (x_port < 0) {
 		lprint("X Redir: X not being redirected.\r\n");
@@ -88,11 +88,11 @@ inet_aton(cp, ia)
 void
 getouraddr()
 {
-	char buff[256];
+	char buff[512];
 	struct hostent *he = NULL;
 	
-	if (gethostname(buff,256) == 0)
-            he = gethostbyname(buff);
+	if (gethostname(&buff,500) == 0)
+            he = gethostbyname(&buff);
         if (he)
             our_addr = *(struct in_addr *)he->h_addr;
         if (our_addr.s_addr == 0)
@@ -219,7 +219,7 @@ SLIRPstrerror(error)
 
 int
 fork_exec(so, ex, do_pty)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	char *ex;
 	int do_pty;
 {
@@ -307,7 +307,7 @@ slirp_openpty(amaster, aslave)
  */
 int
 fork_exec(so, ex, do_pty)
-	struct socket *so;
+	struct SLIRPsocket *so;
 	char *ex;
 	int do_pty;
 {
@@ -686,7 +686,7 @@ add_emu(buff)
 	char buff1[256], buff2[256], buff4[128];
 	char *buff3 = buff4;
 	struct emu_t *emup;
-	struct socket *so;
+	struct SLIRPsocket *so;
 	
 	if (sscanf(buff, "%256s %256s", buff2, buff1) != 2) {
 		lprint("Error: Bad arguments\r\n");
@@ -864,8 +864,8 @@ fd_block(fd)
  */
 int
 rsh_exec(so,ns, user, host, args)
-	struct socket *so;
-	struct socket *ns;
+	struct SLIRPsocket *so;
+	struct SLIRPsocket *ns;
 	char *user;
 	char *host;
 	char *args;

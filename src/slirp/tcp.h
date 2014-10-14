@@ -40,7 +40,7 @@ typedef	u_int32_t	tcp_seq;
 
 extern int tcp_rcvspace;
 extern int tcp_sndspace;
-extern struct socket *tcp_last_so;
+extern struct SLIRPsocket *tcp_last_so;
 
 #define TCP_SNDSPACE 8192
 #define TCP_RCVSPACE 8192
