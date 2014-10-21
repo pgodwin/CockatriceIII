@@ -1,0 +1,52 @@
+The 8001 is not a bootable CD drive.
+
+The 8002 kind of is, the 8003 is picked up in more places.
+
+
+
+replacescsi "HP" "CD-Writer+ 7100" "PHILIPS" "CDD3600"
+
+replacescsi "ASUS" "DVD-ROM E616" "Matshita" "CD-ROM CR-8004" 
+
+
+
+cd0 at scsibus0 target 2 lun 0: <SONY, CD-ROM CDU-8002, 1.8g> SCSI1 5/cdrom removable
+
+
+PowerPC
+cd0 at scsibus1 target 3 lun 0: <MATSHITA, CD-ROM CR-8012, 1.0f> SCSI2 5/cdrom removable
+
+
+SONY CDU-8001 /8002/8003
+
+
+
+
+
+Apple used the following CD-ROM drives:
+for the CDSC: Sony CDU-8001 caddy-based CD-ROM drives
+for the CD SC+: Sony CDU-8002 caddy-based CD-ROM drives
+for the CD150 (1x): Sony CDU 8002, Sony CDU-541-25 caddy-based CD-ROM drives
+For the CD300 or 300i (2X): Matshita CR-8004; Sony CR-503C, Sony CR-503K; 
+Sony CDU-561-25 caddy-based CD-ROM drives. for the CD600 or 600i (4X): 
+Sony CDU-75S with an internal tray. 
+
+
+sd0 at scsibus0 target 0 lun 0: <FUJITSU, M1606S-512, 6237> SCSI2 0/direct fixed
+sd0: 1041 MB, 3457 cyl, 6 head, 102 sec, 512 bytes/sect x 2131992 sectors
+sd0: async, 8-bit transfers
+cd0 at scsibus0 target 2 lun 0: <SONY, CD-ROM CDU-8002, 1.8g> SCSI1 5/cdrom removable
+cd0: async, 8-bit transfers
+
+
+(aha0:0:0): "SONY CD-ROM CDU-8002 1.8g" type 5 removable SCSI 1 
+cd0(aha0:0:0): CD-ROM cd present [220660 x 2048 byte records] 
+(aha0:1:0): "WangDAT Model 3100 02.2" type 1 removable SCSI 2 
+st0(aha0:1:0): Sequential-Access density code 0x13, drive empty 
+
+aha0 targ 0 lun 0: type 0(direct) fixed <CONNER  CP3100-100mb-3.50610> SCSI1
+sd0 at aha0 targ 0 lun 0: 100MB 776 cyl, 8 head, 33 sec, 512 byte/sec
+aha0 targ 6 lun 0: type 5(ro) removable <SONY    CD-ROM CDU-8001 3.2i> SCSI1
+cd0 at aha0 targ 6 lun 0: loaded
+
+ {"SONY","CD-ROM CDU-8001","*", BLIST_BORKEN},

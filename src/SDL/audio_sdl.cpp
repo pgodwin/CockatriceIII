@@ -54,32 +54,32 @@ static void stream_func(void *arg, uint8 *stream, int stream_len);
 
 // Supported sample rates, sizes and channels
 int audio_num_sample_rates = 1;
-uint32 audio_sample_rates[] = {44100 << 16};
+uint32 audio_sample_rates[] = {8000 << 16};//{44100 << 16};
 int audio_num_sample_sizes = 1;
-uint16 audio_sample_sizes[] = {16};
+uint16 audio_sample_sizes[] = {8};//{16};
 int audio_num_channel_counts = 1;
-uint16 audio_channel_counts[] = {2};
+uint16 audio_channel_counts[] = {1};//{2};
 
 
 /*
  *  Initialization
  */
-
+/*
 // Set AudioStatus to reflect current audio stream format
 static void set_audio_status_format(void)
 {
         AudioStatus.sample_rate = audio_sample_rates[audio_sample_rate_index];
         AudioStatus.sample_size = audio_sample_sizes[audio_sample_size_index];
         AudioStatus.channels = audio_channel_counts[audio_channel_count_index];
-}
+}*/
 
 static bool open_sdl_audio(void)
 {
         SDL_AudioSpec desired, obtained;
-        int desired_bits=16;
+        int desired_bits=8;//16;
 
         /* Set up the desired format */
-        desired.freq = 44100;   //11025? 22050?
+        desired.freq = 8192;//44100;   //11025? 22050?
         switch (desired_bits) {
                 case 8:
                         desired.format = AUDIO_U8;
@@ -94,8 +94,8 @@ static bool open_sdl_audio(void)
                         printf("not 8 or 16 sound!?\n");
                         return false;
         }
-        desired.channels = 2;
-        desired.samples = 4096;
+        desired.channels = 1;//2;
+        desired.samples = 8192;//2048;
         desired.callback = stream_func;
 
         /* Open the audio device */
@@ -136,12 +136,6 @@ static bool open_sdl_audio(void)
         D(bug("channels %d\n",obtained.channels));
         D(bug("samples %d\n",obtained.samples));
 	printf("SDL_Audio inited %dbit, %dHz, %d channels\n",obtained.format&0xff,obtained.freq,obtained.channels);
-        // Init audio status and feature flags
-        AudioStatus.sample_rate = audio_sample_rates[0];
-        AudioStatus.sample_size = audio_sample_sizes[0];
-        AudioStatus.channels = audio_channel_counts[0];
-        AudioStatus.mixer = 0;
-        AudioStatus.num_sources = 0;
 
         silence_byte = obtained.silence;
 
@@ -158,6 +152,7 @@ static bool open_sdl_audio(void)
 
 static bool open_audio(void)
 {
+
         // Try to open SDL audio
         if (!open_sdl_audio()) {
                 //WarningAlert(GetString(STR_NO_AUDIO_WARN));
@@ -166,7 +161,7 @@ static bool open_audio(void)
         }
 
         // Device opened, set AudioStatus
-        set_audio_status_format();
+        //set_audio_status_format();
 
         // Everything went fine
         audio_open = true;
@@ -175,12 +170,12 @@ static bool open_audio(void)
 
 void AudioInit(void)
 {
-        // Init audio status and feature flags
-        AudioStatus.sample_rate = 44100 << 16;
-        AudioStatus.sample_size = 16;
-        AudioStatus.channels = 2;
-        AudioStatus.mixer = 0;
-        AudioStatus.num_sources = 0;
+	// Init audio status and feature flags
+	AudioStatus.sample_rate = audio_sample_rates[0];
+	AudioStatus.sample_size = audio_sample_sizes[0];
+	AudioStatus.channels = audio_channel_counts[0];
+	AudioStatus.mixer = 0;
+	AudioStatus.num_sources = 0;
         audio_component_flags = cmpWantsRegisterMessage | kStereoOut | k16BitOut;
 
         // Sound disabled in prefs? Then do nothing

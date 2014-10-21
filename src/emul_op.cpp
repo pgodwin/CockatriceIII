@@ -414,6 +414,10 @@ void EmulOp(uint16 opcode, M68kRegisters *r)
 			r->d[0] = 0;
 			if (InterruptFlags & INTFLAG_60HZ) {
 				ClearInterruptFlag(INTFLAG_60HZ);
+
+				// Increment Ticks variable
+				WriteMacInt32(0x16a, ReadMacInt32(0x16a) + 1);
+
 				if (HasMacStarted()) {
 
 					// Mac has started, execute all 60Hz interrupt functions
@@ -423,6 +427,7 @@ void EmulOp(uint16 opcode, M68kRegisters *r)
 					SonyInterrupt();
 					DiskInterrupt();
 					CDROMInterrupt();
+					EtherInterrupt();
 
 					// Call DoVBLTask(0)
 					if (ROMVersion == ROM_VERSION_32) {

@@ -144,6 +144,19 @@ static int32 AudioGetInfo(uint32 infoPtr, uint32 selector, uint32 sourceID)
 			WriteMacInt16(infoPtr, 13);
 			break;
 
+/*** from later version
+		case siHardwareFormat:
+			WriteMacInt32(infoPtr + scd_flags, 0);
+			WriteMacInt32(infoPtr + scd_format, AudioStatus.sample_size == 16 ? FOURCC('t','w','o','s') : FOURCC('r','a','w',' '));
+			WriteMacInt16(infoPtr + scd_numChannels, AudioStatus.channels);
+			WriteMacInt16(infoPtr + scd_sampleSize, AudioStatus.sample_size);
+			WriteMacInt32(infoPtr + scd_sampleRate, AudioStatus.sample_rate);
+			WriteMacInt32(infoPtr + scd_sampleCount, audio_frames_per_block);
+			WriteMacInt32(infoPtr + scd_buffer, 0);
+			WriteMacInt32(infoPtr + scd_reserved, 0);
+			break;
+*/
+
 		case siHardwareBusy:
 			WriteMacInt16(infoPtr, AudioStatus.num_sources != 0);
 			break;
@@ -175,6 +188,7 @@ static int32 AudioSetInfo(uint32 infoPtr, uint32 selector, uint32 sourceID)
 	int i;
 
 	switch (selector) {
+printf("audiosetinfo %d\n",selector);
 		case siSampleSize:
 			D(bug("  set sample size %08lx\n", infoPtr));
 			if (AudioStatus.num_sources)
@@ -259,10 +273,11 @@ int32 AudioDispatch(uint32 params, uint32 globals)
 		// Basic component functions
 		case kComponentOpenSelect:
 			if (audio_data == 0) {
-
 				// Allocate global data area
 				r.d[0] = SIZEOF_adat;
-				Execute68kTrap(0xa71e, &r);	// NewPtrSysClear()
+				Execute68kTrap(0xa040, &r);	// ResrvMem()
+				r.d[0] = SIZEOF_adat;
+				Execute68kTrap(0xa31e, &r);	// NewPtrClear()
 				if (r.a[0] == 0)
 					return memFullErr;
 				audio_data = r.a[0];
@@ -349,8 +364,21 @@ int32 AudioDispatch(uint32 params, uint32 globals)
 				WriteMacInt16(p, 0xa82a); p += 2;	// ComponentDispatch
 				WriteMacInt16(p, 0x201f); p += 2;	// move.l	(sp)+,d0
 				WriteMacInt16(p, M68K_RTS); p += 2;	// rts
+				if (p - audio_data != adatStartSource)
+					goto adat_error;
+				WriteMacInt16(p, 0x598f); p += 2;	// subq.l	#4,sp
+				WriteMacInt16(p, 0x2f09); p += 2;	// move.l	a1,-(sp)
+				WriteMacInt16(p, 0x3f00); p += 2;	// move.w	d0,-(sp)
+				WriteMacInt16(p, 0x2f08); p += 2;	// move.l	a0,-(sp)
+				WriteMacInt16(p, 0x2f3c); p += 2;	// move.l	#$00060105,-(sp)
+				WriteMacInt32(p, 0x00060105); p+= 4;
+				WriteMacInt16(p, 0x7000); p += 2;	// moveq	#0,d0
+				WriteMacInt16(p, 0xa82a); p += 2;	// ComponentDispatch
+				WriteMacInt16(p, 0x201f); p += 2;	// move.l	(sp)+,d0
+				WriteMacInt16(p, M68K_RTS); p += 2;	// rts
 				if (p - audio_data != adatData)
 					goto adat_error;
+
 			}
 			AudioAvailable = true;
 			if (open_count == 0)

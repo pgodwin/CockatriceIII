@@ -1,4 +1,4 @@
-This is the third public version of Cockatrice
+This is the fourth public version of Cockatrice
 
  **** THERE IS A BUG IN PARSING PREF FILES, PUT AN EMPTY LINE or a HASH as the 
 last entry, and everything will be fine!!!!!!!!!!!!!! ****
@@ -6,13 +6,56 @@ last entry, and everything will be fine!!!!!!!!!!!!!! ****
 Enclosed is two executables, and the SDL dll that I'm using 
 (although there is nothing special about it).
 
-What is new in this release of Cockatrice, is that it supports SCSI disk files!
-Thanks to the previous emulator (it emulates a NeXT cube/slab) I used their
-SCSI disk code to interface to the SCSI bridge, and now you can have
-partitionable and formattable disk images.  The boot priorities are still
-too low, so the 'floppies' will always win.
+What is new in this release of Cockatrice, is that it greatly improves
+networking speed and stability.  I can now copy several GB worth of 
+data over AppleTalk, while before this was dreadfully slow and unstable.
+I've also started to expand the SCSI code to better support the buffer
+demands of Basilisk II, so you can now format disks 2GB without it
+crashing.  I have also started to add primative CD-ROM support, in addition
+to the SCSI disk files.  The SCSI device #6 is hard coded to be a CD-ROM.
+There is no 'hot' insertation method, and ignore/lock are ignored for now.
+Simply use the following statement in your config file:
 
-scsi0 <diskfilename>
+scsi6 <diskfilename>
+
+But at this time, ISO-9660 filesystems will not mount.  Only *SOME*
+HFS volumes will.  I have also made available on sourceforge a 'util' CD
+that contains among other things the disk tool from A/UX that can format
+any disk.  You can find it at:
+
+https://sourceforge.net/projects/cockatrice/files/Utils/
+
+I highly recommend using it if you are starting for the first time.  To
+force your virtual MAC to boot from the CD use the statements:
+
+disk6 CDUtils.iso
+bootdriver -33
+bootdisk 6
+
+And this will ensure that the CD-ROM gets boot priority.  I've found that
+the Macintosh Quadra 800 ROM is the best for running System 7 and 8.
+
+My config is as follows:
+
+ramsize 134217728
+frameskip 2
+scsi0 2gig.scsi
+disk transfer.hfv
+bootdriver -33
+bootdisk 0
+screen win/800/600
+ether \Device\NPF_{FFFFFFFF-FFFF-7777-FFFF-FFFFFFFFFFFF}
+modelid	29
+rom	Quadra800.rom
+cpu	4
+fpu	false
+nocdrom true
+nosound false
+nogui true
+idlewait true
+
+This way my SCSI disk boots instead of trying to boot from the 
+transfer.hfv volume, which is the default behavour.
 
 is the syntax to add a disk into position 0 of the SCSI bus.
 
@@ -31,7 +74,7 @@ network adapters available in your computer.
 C:\BasiliskII\mingw>ethlist.exe
 Network devices:
   Number       NAME                                     (Description)
-  0  \Device\NPF_{6D96D148-9B3D-4AF6-9FC3-1B4987074978} (Local Area Connection)
+  0  \Device\NPF_{FFFFFFFF-FFFF-7777-FFFF-FFFFFFFFFFFF} (Local Area Connection)
 
 Press Enter to continue...
 
@@ -51,20 +94,25 @@ When you start Cockatrice, you should then see something similar to this:
 
 C:\BasiliskII\mingw>BasiliskII.exe
 Basilisk II V0.8 by Christian Bauer et al.
-Using Rom [..\test\Quadra800.rom]
 Reading ROM file...
-EtherInit with \Device\NPF_{6D96D148-9B3D-4AF6-9FC3-1B4987074978}
-one or the other 0 0 1!?
-Using pcap version [WinPcap version 4.1.3 (packet.dll version 4.1.0.2980), based
- on libpcap version 1.0 branch 1_0_rel0b (20091008)]
-Ethernet address fe fd 00 00 17 90
-SDL_Audio inited 16bit, 44100Hz, 2 channels
+Setting up for a 68040, Without FPU and 32bit addressing
+SCSI Unit 0:2gig.scsi geometry: 63 sectors, 1999534 cylinders, 16 heads
+SCSI Unit 6:MacAddict_001_1996_09.iso
+EtherInit with [PCAP]
+Pcap version [WinPcap version 4.1.3 (packet.dll version 4.1.0.2980), based on li
+bpcap version 1.0 branch 1_0_rel0b (20091008)]
+Ethernet address fe fd 00 00 70 58
+Building packet filter.........!
+SDL_Audio inited 8bit, 8192Hz, 1 channels
+Patching a 32-bit clean ROM (version $067c or higher)
 
 
 Linux and OS X users just need to specify the name of their 
 ethernet interfaces.  WIFI ADAPTERS WILL NOT WORK!!!  Instead use SLiRP.
 
-You may also need to run this as the root user.
+You may also need to run this as the root user.  In a future release I'll
+try a stab at the user mode support, although I think that is a Windows
+only thing.
 
 To use the SLiRP (ie user mode NAT) you simply use the statement
 
@@ -85,7 +133,7 @@ to ensure the stack is working, ping 10.0.2.2.  It is the only thing that can pi
 I've done my best to make the SLiRP as stable as possible, but it's possible 
 that it may fail frm time to time. 
 
-But I've downloaded 150MB files at 67KB/sec without issue.  
+But I've downloaded 150MB files at 450KB/sec without issue.  
 
 Plenty of things are missing from this version, as it is derived from 
 BasiliskII version 0.8.  I am striving to make it 100% SDL reliant for 
@@ -94,45 +142,12 @@ while the Visual C++ version is more agnostic.  But for now I'm only
 happy with the GCC/Clang built versions. But the Visual C++ build is making
 great progress
 
-For me, anyways the following is what I use for a system configuraton
-for my main disk, System 8.0 :
-
-#######################
-#       Quadra 630  should be a 92
-cpu     4
-fpu     false
-modelid 14
-rom     quadra630.rom
-#######################
-ramsize 67108864
-screen win/800/60
-nocdrom false
-nosound false
-nogui true
-#######################
-
 I've mostly tested with os 8.0 for internet stuff, and 7.11 for using 
 AppleTalk to communicate with Shoebill, and Windows NT AppleTalk servers.
 
 
-For System 7.1.1 without AppleTalk or OpenTransport I use this:
-#######################
-#       MacIIci
-modelid        5
-rom    MacIIci.rom
-cpu    2
-fpu    true
-#######################
+For System 7.1.1 without AppleTalk or OpenTransport I just set the modelid
+to 5, and restrict the CPU to 3
 
-I've found it is very fast.
-
-For a more full featured System 7 I use the 68030 based MacIIci
-
-#######################
-#       MacIIci
-#modelid        5
-#rom    MacIIci.rom
-#cpu    2
-#fpu    true
-#
-#######################
+Various other ROMs either have booting issues from SCSI, or other errors that
+BasiliskII's ROM patches cannot compensate for.

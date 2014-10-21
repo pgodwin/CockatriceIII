@@ -935,11 +935,13 @@ printf("Patching for a Mac Classic/SE (version $0276)\n");
 	*wp++ = htons(M68K_EMUL_OP_MICROSECONDS);
 	*wp = htons(M68K_RTS);
 
+
 	// Replace SCSIDispatch()
 	wp = (uint16 *)(ROMBaseHost + 0x1a206);
 	*wp++ = htons(M68K_EMUL_OP_SCSI_DISPATCH);
 	*wp++ = htons(0x2e49);		// move.l	a1,a7
 	*wp = htons(M68K_JMP_A0);
+
 
 	// Modify vCheckLoad() so we can patch resources
 	wp = (uint16 *)(ROMBaseHost + 0xe740);
@@ -982,7 +984,9 @@ printf("Patching for a Mac Classic/SE (version $0276)\n");
 	*wp++ = htons(M68K_NOP);
 	*wp = htons(M68K_NOP);
 
-	wp = (uint16 *)(ROMBaseHost + 0x2be8);	// 60Hz handler (handles everything)
+	wp = (uint16 *)(ROMBaseHost + 0x2be4);	// 60Hz handler (handles everything)
+	*wp++ = htons(M68K_NOP);
+	*wp++ = htons(M68K_NOP);
 	*wp++ = htons(M68K_EMUL_OP_IRQ);
 	*wp++ = htons(0x4a80);		// tst.l	d0
 	*wp = htons(0x67f4);		// beq		0x402be2
@@ -1174,9 +1178,11 @@ static bool patch_rom_32(void)
 	wp = (uint16 *)(ROMBaseHost + 0x9c0);
 	*wp = htons(M68K_RTS);
 
+
 	// Don't init SCSI
 	wp = (uint16 *)(ROMBaseHost + 0x9a0);
 	*wp = htons(M68K_RTS);
+
 
 	// Don't init ASC
 	static const uint8 init_asc_dat[] = {0x26, 0x68, 0x00, 0x30, 0x12, 0x00, 0xeb, 0x01};
@@ -1441,8 +1447,11 @@ static bool patch_rom_32(void)
 			wp = (uint16 *)(ROMBaseHost + base + 8);
 			*wp = htons(M68K_NOP);
 		}
-#if 1
+#if 1		//Why do we have to mess with SANE?
+		//I'm going to guess it has to do when the FPU
+		//is enabled.
 		// SANE
+	if(FPUType==1) {
 		static const uint8 ptest2_dat[] = {0x0c, 0x38, 0x00, 0x04, 0x01, 0x2f, 0x6d, 0x54, 0x48, 0xe7, 0xf8, 0x60};
 		base = find_rom_data(0, ROMSize, ptest2_dat, sizeof(ptest2_dat));
 		D(bug("ptest2 %08lx\n", base));
@@ -1454,6 +1463,7 @@ static bool patch_rom_32(void)
 			*wp++ = htons(0x7000);		// moveq	#0,d0
 			*wp = htons(M68K_RTS);
 		}
+	   }//end FPU
 #endif
 	}
 
@@ -1588,7 +1598,9 @@ static bool patch_rom_32(void)
 	*wp++ = htons(M68K_NOP);
 	*wp = htons(M68K_NOP);
 
-	wp = (uint16 *)(ROMBaseHost + 0xa29a);	// 60Hz handler (handles everything)
+	wp = (uint16 *)(ROMBaseHost + 0xa296);	// 60Hz handler (handles everything)
+	*wp++ = htons(M68K_NOP);
+	*wp++ = htons(M68K_NOP);
 	*wp++ = htons(M68K_EMUL_OP_IRQ);
 	*wp++ = htons(0x4a80);		// tst.l	d0
 	*wp = htons(0x67f4);		// beq		0x4080a294

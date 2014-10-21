@@ -129,7 +129,8 @@ D(bug(" init_window w%d,h%d d%d\n",width,height,depth));
                 frame_skip = 1;
 //SDL
         if(SDL_Init(SDL_INIT_VIDEO)<0)
-                exit(0);
+		{printf("There was an issue with SDL trying to initalize video.\n");
+                exit(0);}
         flags=(SDL_SWSURFACE|SDL_HWPALETTE);
         if (!(SDLscreen = SDL_SetVideoMode(width, height, 8, flags)))
         printf("VID: Couldn't set video mode: %s\n", SDL_GetError());
